@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fmrs plugin. Everything not named here - target framework, KSP and kRPC
+    references, documentation file, output routing, deploy target - is inherited from
+    Directory.Build.props / Directory.Build.targets at the repo root.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Fmrs</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Fmrs</RootNamespace>
+
+    <!-- This one line is what puts the DLL in GameData\KRPC.Bridge\Plugins\ rather
+         than at the root next to the Core. It has to be set HERE, in the project body:
+         Directory.Build.targets is imported after the SDK has already frozen TargetPath,
+         so an OutputPath set there changes the property and not the actual output. -->
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Private=false is the whole answer to "reference the Core without duplicating its
+      DLL". With it, MSBuild gives compile-time types and orders the build so Core is
+      built first, but does NOT copy KRPC.Bridge.Core.dll into this project's output.
+
+      Without it a second copy of Core lands inside Plugins\, KSP loads both, every type
+      exists twice in the AppDomain, and the error reads "cannot convert
+      KRPC.Bridge.Core.X to KRPC.Bridge.Core.X". Worth getting right once.
+    -->
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+</Project>

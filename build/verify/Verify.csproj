@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Type-checks every plugin source against the stubs and against a REAL, separate Core
+    assembly - with no KSP install and no kRPC DLLs.
+
+        dotnet build build/verify/Verify.csproj
+
+    Catches typos, wrong overloads, missing usings, and - because Core is a genuine
+    assembly reference rather than more source files in the same compilation - anything a
+    plugin tries to reach that Core does not actually expose publicly.
+
+    That last part is the reason this is two projects. A single merged compilation makes
+    `internal` look public, and it let PluginStatus ship with setters no plugin could
+    assign to: verify passed, CI passed, and the real build failed with seven CS0200 per
+    plugin. See build/verify/Core/VerifyCore.csproj.
+
+    A GLOB, not a list of files, and that is deliberate: forgetting to add a new plugin to
+    a list is exactly the path by which an unchecked source file reaches GameData. A glob
+    cannot be forgotten.
+
+    Two things it still does NOT do. It produces a DLL that is useless in game, because it
+    links the stubs - never ship it. And it does not validate kRPC service signatures:
+    that is build/scan, which loads the real assemblies and runs kRPC's own scanner.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.Verify</AssemblyName>
+    <RootNamespace>KRPC.Bridge</RootNamespace>
+    <LangVersion>9</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>CS1591</NoWarn>
+
+    <!-- Read by Directory.Build.targets, which skips the KSP and kRPC references and
+         leaves the output path alone when this is set. The references live in .targets
+         rather than .props for exactly this reason: .props is imported BEFORE the project
+         body and could not see a property the project sets about itself. -->
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core, and the stubs it carries, as a real assembly reference. -->
+    <ProjectReference Include="Core\VerifyCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK expands its default **/*.cs glob before it reads this file, so
+         EnableDefaultCompileItems=false above comes too late to stop it. A Remove
+         does apply, and keeps a stale obj/ in THIS folder out of the compile. -->
+    <Compile Remove="obj\**" />
+    <Compile Remove="bin\**" />
+    <Compile Include="..\..\src\Plugins\**\*.cs"
+             Exclude="..\..\src\Plugins\**\AssemblyInfo.cs;..\..\src\Plugins\**\obj\**;..\..\src\Plugins\**\bin\**" />
+  </ItemGroup>
+
+  <!--
+    obj and bin are excluded from the SOURCE glob, and that is not belt-and-braces.
+
+    The real per-project build leaves src/Core/obj/Release/ containing a generated
+    .NETFramework,Version=v4.7.2.AssemblyAttributes.cs. A recursive glob over src/Core
+    picks it up, the SDK generates its own TargetFrameworkAttribute for THIS project, and
+    the compile dies on CS0579 "duplicate attribute".
+
+    It only fires once a real build has run, so a clean checkout hides it completely -
+    which is exactly how it reached a user: verify passed here, then step 3 created the
+    obj folders, and the next verify failed.
+  -->
+
+  <!--
+    AssemblyInfo.cs is excluded because this project compiles every plugin's sources into
+    ONE assembly, and assembly-level attributes cannot be declared twice - four
+    AssemblyInfo files would be four AssemblyTitle attributes. Nothing is lost: those
+    files contain only KSPAssembly, KSPAssemblyDependency and version attributes, which
+    the real per-project build checks anyway.
+  -->
+
+</Project>

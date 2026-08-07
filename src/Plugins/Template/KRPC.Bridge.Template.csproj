@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Copy this folder to start a plugin. Three things to change: AssemblyName,
+    RootNamespace, and the names in AssemblyInfo.cs.
+
+    Everything else is inherited from Directory.Build.props at the repo root, including
+    the KSP and kRPC references. There is nothing to repeat here.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Template</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Template</RootNamespace>
+
+    <!-- A real plugin sets <OutputPath>$(DistRoot)Plugins\</OutputPath> here. That one
+         line is what puts its DLL in GameData\KRPC.Bridge\Plugins\ rather than at the root
+         next to the Core, and it must be in the project BODY - Directory.Build.targets is
+         imported after the SDK has frozen TargetPath, so setting it there silently does
+         nothing.
+
+         The template deliberately does NOT, and is deliberately absent from
+         KRPC.Bridge.sln. It declares a kRPC service of its own, so building it into dist/
+         would ship a fifth DLL and a fifth service - conn.template - to every user.
+         build/verify still type-checks these sources, because that project globs
+         src/**/*.cs, so the template cannot silently rot.
+
+         Uncomment the line above in your COPY of this folder, not here. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Private=false is the whole answer to "how do I reference the Core without
+      duplicating its DLL".
+
+      With it, MSBuild still gives you compile-time types and still orders the build so
+      Core is compiled first, but it does NOT copy KRPC.Bridge.Core.dll into this
+      project's output. Without it you would ship a second copy of Core inside Plugins\,
+      KSP would load both, and every type would exist twice in the AppDomain with
+      "cannot convert KRPC.Bridge.Core.MainThread to KRPC.Bridge.Core.MainThread" as the
+      error. That failure is genuinely hard to read, so it is worth getting right once.
+
+      Plugin-to-plugin references work exactly the same way: add another ProjectReference
+      with Private=false, and add the matching KSPAssemblyDependency in AssemblyInfo.cs
+      so KSP loads them in the right order at runtime too. MSBuild handles build order;
+      KSPAssemblyDependency handles load order. You need both, they solve different
+      problems.
+    -->
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+</Project>

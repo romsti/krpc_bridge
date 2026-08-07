@@ -1,0 +1,87 @@
+KRPC.Bridge
+Copyright (c) 2026 romsti
+Licensed under the MIT License. See LICENSE.
+
+
+WHAT THIS MOD SHIPS
+-------------------
+
+Only its own assemblies:
+
+    KRPC.Bridge.Core.dll        + .xml
+    KRPC.Bridge.Fmrs.dll        + .xml
+    KRPC.Bridge.Ocisly.dll      + .xml
+    KRPC.Bridge.MechJeb.dll     + .xml
+    LICENSE, NOTICE, KRPC.Bridge.version
+
+Nothing else. No kRPC assemblies, no KSP or Unity assemblies, and no files
+belonging to any of the mods listed below. Everything is a dependency to be
+installed separately, never a bundled copy.
+
+
+kRPC - LINKED AGAINST
+---------------------
+
+KRPC.Bridge is compiled against KRPC.dll and KRPC.Core.dll, which are part of
+kRPC.
+
+    kRPC
+    Copyright 2015-2023 kRPC Org
+    Licensed under the GNU Lesser General Public License v3.0 or later
+    https://github.com/krpc/krpc
+
+Those two assemblies come from kRPC's core/ and server/ directories, which the
+project's LICENSE file places under the LGPL. (kRPC's GPLv3 carve-outs cover
+service/SpaceCenter and the tooling directories; KRPC.Bridge references neither.)
+
+Both are referenced with <Private>False</Private>, so no copy of either is ever
+produced or distributed by this project. At run time KSP loads the copy already
+present in the player's own GameData/kRPC folder. Any interface-compatible
+build of kRPC may be substituted simply by replacing those files.
+
+
+MODS REACHED BY REFLECTION - NOT LINKED, NOT REDISTRIBUTED
+----------------------------------------------------------
+
+KRPC.Bridge holds no compile-time reference to any of the following and
+contains no code copied from them. It locates them at run time through KSP's
+own AssemblyLoader and calls their public members by reflection. When a mod is
+absent, its plugin reports available = false and everything else keeps working.
+
+    FMRS Continued (Flight Manager for Reusable Stages)
+    Copyright (c) 2015 SIT89, maintained by linuxgurugamer
+    MIT License
+    https://github.com/linuxgurugamer/FMRS
+
+    MechJeb 2
+    GNU General Public License v3.0
+    https://github.com/MuMech/MechJeb2
+
+    OfCourseIStillLoveYou (OCISLY)
+    Copyright (c) Jesus Rodriguez Valencia
+    https://github.com/jrodrigv/OfCourseIStillLoveYou
+    Note: every released build ships a GPL-3.0 LICENSE file. The repository's
+    root LICENSE was changed to MIT in April 2026, but no release has been cut
+    under it, so treat the copy in your GameData as GPL-3.0.
+
+    HullcamVDS Continued
+    Maintained by linuxgurugamer
+    GNU General Public License v3.0
+    https://github.com/linuxgurugamer/HullcamVDSContinued
+
+Thanks to their authors and maintainers. If you maintain one of these and would
+rather KRPC.Bridge did not integrate with it, please open an issue and it will
+be removed.
+
+
+KERBAL SPACE PROGRAM
+--------------------
+
+Kerbal Space Program is a trademark of its respective owners. KRPC.Bridge is an
+unofficial add-on, not affiliated with or endorsed by the developers or
+publishers of the game.
+
+The build compiles against Assembly-CSharp.dll, Assembly-CSharp-firstpass.dll
+and the UnityEngine assemblies from the builder's own installation. None of them
+is redistributed, as required by the KSP Add-on Posting Rules and the EULA. Only
+public and protected members of those assemblies are used.

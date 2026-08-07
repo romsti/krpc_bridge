@@ -1,0 +1,67 @@
+/* KRPC.Bridge documentation site - small overrides on Material's defaults.
+ *
+ * Everything here exists because this is a REFERENCE, not a blog. Material's
+ * defaults are tuned for prose: a narrow measure, generous whitespace. That is
+ * right for the scripting guide and wrong for a table of 88 procedures whose
+ * third column is a paragraph. */
+
+:root {
+  /* Material ships 61rem. The two sidebars eat about 24rem of that, leaving a
+   * code column narrow enough that a Python line with an aligned trailing
+   * comment - which most of the examples have - overflows into a horizontal
+   * scrollbar. Widening the grid is the one change that fixes every example
+   * and every wide table at once, without editing a single line of content. */
+  --md-grid-max-width: 76rem;
+}
+
+.md-grid {
+  max-width: var(--md-grid-max-width);
+}
+
+/* Reference tables: let the member name and its type stay on one line, and give
+ * the notes column the rest. Without this the browser distributes width evenly
+ * and `set_ascent_setting(name, value)` wraps in the middle of the signature. */
+.md-typeset table:not([class]) td:first-child,
+.md-typeset table:not([class]) th:first-child {
+  white-space: nowrap;
+}
+
+.md-typeset table:not([class]) td:nth-child(2) {
+  white-space: nowrap;
+}
+
+/* A member row is dense. Tighten the vertical padding so a service section fits
+ * on one screen instead of two. */
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  padding: 0.5em 0.9em;
+}
+
+/* Inline code inside a table cell should read as code without shouting. */
+.md-typeset table:not([class]) code {
+  font-size: 0.78rem;
+  word-break: normal;
+}
+
+/* Code blocks: slightly tighter than the default so a 90-character line fits
+ * before the scrollbar appears. */
+.md-typeset pre > code {
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+/* The landing page's "Where to start" cards. Material's grid needs a nudge to
+ * keep three cards readable rather than squeezing them to a column each. */
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0.3rem;
+}
+
+/* On a narrow screen nowrap would force a horizontal scroll on every table, so
+ * hand the columns back to the browser. */
+@media screen and (max-width: 76.234375em) {
+  .md-typeset table:not([class]) td:first-child,
+  .md-typeset table:not([class]) th:first-child,
+  .md-typeset table:not([class]) td:nth-child(2) {
+    white-space: normal;
+  }
+}

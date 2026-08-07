@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Half one of the stub type-check: the stubs plus src/Core, compiled into an assembly of
+    their own.
+
+    WHY THIS IS A SEPARATE PROJECT. Verify used to compile Core and every plugin into ONE
+    assembly, and that hid a whole class of error: `internal` is visible within an
+    assembly, so a Core member marked `internal` looked reachable from a plugin when in
+    the real build it is not. That is exactly how PluginStatus shipped with `internal set`
+    setters no plugin could assign to - the stub check passed, `build.cmd verify` passed,
+    CI passed, and the real per-project build failed with seven CS0200 per plugin.
+
+    Two projects reproduce the boundary that matters. The stubs live HERE rather than in
+    both halves, because they are public types in this assembly and the plugin half sees
+    them through the ProjectReference - which also means they cannot drift apart.
+
+    Never built by KRPC.Bridge.sln, and the output is useless in game: it links the stubs.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- The real assembly name, so an accessibility mistake surfaces the same way. -->
+    <AssemblyName>KRPC.Bridge.Core</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Core</RootNamespace>
+    <LangVersion>9</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>CS1591</NoWarn>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The SDK expands its default **/*.cs glob before it reads this file, so
+         EnableDefaultCompileItems=false above comes too late to stop it. A Remove
+         does apply, and keeps a stale obj/ in THIS folder out of the compile. -->
+    <Compile Remove="obj\**" />
+    <Compile Remove="bin\**" />
+    <Compile Include="..\..\stubs\Stubs.cs" />
+    <Compile Include="..\..\..\src\Core\**\*.cs"
+             Exclude="..\..\..\src\Core\**\AssemblyInfo.cs;..\..\..\src\Core\**\obj\**;..\..\..\src\Core\**\bin\**" />
+  </ItemGroup>
+
+  <!--
+    obj and bin are excluded from the SOURCE glob, and that is not belt-and-braces.
+
+    The real per-project build leaves src/Core/obj/Release/ containing a generated
+    .NETFramework,Version=v4.7.2.AssemblyAttributes.cs. A recursive glob over src/Core
+    picks it up, the SDK generates its own TargetFrameworkAttribute for THIS project, and
+    the compile dies on CS0579 "duplicate attribute".
+
+    It only fires once a real build has run, so a clean checkout hides it completely -
+    which is exactly how it reached a user: verify passed here, then step 3 created the
+    obj folders, and the next verify failed.
+  -->
+
+</Project>

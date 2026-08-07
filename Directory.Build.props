@@ -1,0 +1,51 @@
+<Project>
+
+  <!--
+    Shared by every project in the repo. MSBuild imports this automatically for any
+    csproj at or below this directory, so nothing here is repeated in a csproj again.
+
+    Override the KSP path once, on the command line:
+        dotnet build KRPC.Bridge.sln -c Release -p:KSPRoot="D:\Games\KSP_1.12.5"
+  -->
+
+  <PropertyGroup>
+    <KSPRoot Condition="'$(KSPRoot)'==''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KSPRoot>
+    <ManagedPath>$(KSPRoot)\KSP_x64_Data\Managed</ManagedPath>
+    <KRPCPath Condition="'$(KRPCPath)'==''">$(KSPRoot)\GameData\kRPC</KRPCPath>
+
+    <!-- KSP 1.12 is Unity 2019.4 on the .NET 4.x scripting runtime. -->
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <Deterministic>true</Deterministic>
+
+    <!-- Nothing we build is ever satellite-deployed, and the .pdb is useless in KSP. -->
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- kRPC reads the XML next to each DLL to build the Python docstrings. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591 = missing XML comment on a public member. Internals are not exposed
+         to kRPC, so silence it rather than documenting plumbing. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Every project lands in dist/, laid out EXACTLY like GameData. Deploy is then
+         one mirror copy of dist\GameData into <KSP>\GameData, with no path rewriting.
+         BridgeOutputSubdir is set per project: empty for Core, "Plugins" for plugins. -->
+    <DistRoot>$(MSBuildThisFileDirectory)dist\GameData\KRPC.Bridge\</DistRoot>
+  </PropertyGroup>
+
+  <!--
+    The references are NOT here, they are in Directory.Build.targets. That is deliberate.
+
+    .props is imported BEFORE the project body, so a condition written here cannot see a
+    property the project sets about itself. build/verify/Verify.csproj sets
+    BridgeUseStubs=true, and it must be able to skip the KSP references on that basis,
+    including when you run `dotnet build build/verify/Verify.csproj` by hand with no
+    extra flags. .targets is imported after the project body and sees it.
+  -->
+
+</Project>

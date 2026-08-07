@@ -1,0 +1,53 @@
+name: build
+
+# What CI can and cannot do here, stated plainly.
+#
+# CAN: type-check every source file against build/stubs, and check that the documented
+#      RPCs and the declared ones still match. That catches typos, wrong overloads,
+#      missing usings and a doc left behind, on every push, for free.
+#
+# CANNOT: validate kRPC service signatures. That needs the real KRPC.Core.dll and the
+#      KSP managed assemblies, and neither may be redistributed - the KSP Add-on Posting
+#      Rules forbid shipping the game's DLLs, and a CI runner has no licensed install.
+#      So the signature scan (build/scan) runs on YOUR machine, from build.cmd, before
+#      you deploy. There is no way around this and it is worth being honest about:
+#      a green tick here does not mean the build is safe to load in game.
+
+on:
+  push:
+    branches: [ main, work ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    name: type-check C# against stubs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Compile every source file against the stubs
+        run: dotnet build build/verify/Verify.csproj -v minimal --nologo
+
+      - name: Compile the signature scanner
+        # Not run - it needs a KSP install - but a scanner that does not compile is
+        # a scanner nobody runs.
+        run: dotnet build build/scan/Scan.csproj -v minimal --nologo
+
+  docs:
+    name: docs match the code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Every documented RPC exists, and every RPC is documented
+        run: python tools/check_docs.py

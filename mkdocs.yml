@@ -1,0 +1,105 @@
+site_name: KRPC.Bridge
+site_description: >-
+  kRPC services for FMRS, OCISLY and MechJeb 2 - three Kerbal Space Program mods
+  with no scriptable interface, made drivable from Python.
+site_url: https://romsti.github.io/krpc_bridge/
+site_author: romsti
+
+repo_url: https://github.com/romsti/krpc_bridge
+repo_name: romsti/krpc_bridge
+edit_uri: edit/main/docs/
+
+copyright: MIT. Ships only its own assemblies; nothing is redistributed.
+
+# The site is built FROM the repo's own docs/ folder rather than from a copy.
+# There is one source of truth for every sentence: the same API.md that
+# tools/check_docs.py validates against the C# on every push is the page served
+# here. A doc site that drifts from the repo is worse than no doc site.
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/rocket-launch-outline
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant       # no full page reload between pages
+    - navigation.instant.prefetch
+    - navigation.tracking      # the URL follows the section you are reading
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy        # a copy button on every example
+    - content.action.edit
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true          # an anchor per heading, so a member can be linked
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Scripting guide: SCRIPTING.md
+  - API reference: API.md
+  - Architecture: ARCHITECTURE.md
+
+# docs/publishing/ is deliberately absent, from the nav AND from git. Those three files
+# are the maintainer's own runbook - how to tag, what to paste into the SpaceDock form,
+# how to open the CKAN pull request. None of it helps someone using the mod, and a
+# reader who lands on "step 5: force-push" learns nothing except that they are in the
+# wrong document. They live on the maintainer's disk and are gitignored.
+#
+# exclude_docs keeps mkdocs --strict quiet about them when they ARE present locally:
+# without it, a file under docs/ that no nav entry points at is a strict-mode failure.
+exclude_docs: |
+  publishing/
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/romsti/krpc_bridge
+      name: KRPC.Bridge on GitHub
+
+# strict is set on the command line in CI rather than here, so that a local
+# `mkdocs serve` stays usable while you are mid-edit and a link is briefly dead.

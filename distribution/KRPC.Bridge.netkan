@@ -1,0 +1,38 @@
+{
+    "spec_version": "v1.18",
+    "identifier": "KRPC-Bridge",
+    "name": "KRPC.Bridge",
+    "abstract": "kRPC services for FMRS, OCISLY and MechJeb 2 - three mods with no scriptable interface, made drivable from Python.",
+    "description": "Adds kRPC services that reach FMRS Continued, OfCourseIStillLoveYou and MechJeb 2 by reflection. Fly a dropped booster from a script and read what its recovery earned; restore Hullcam camera streams that a flight-scene reload silently drops; fly a MechJeb ascent while taking the staging decision back, which is the only way to drop side boosters that share a stage with the core. Also adds an ordered event log so a script can observe an instant rather than sampling a value. Each integration is a separate plugin assembly and degrades independently: a mod you do not have simply reports available = false.",
+
+    "author": "romsti",
+    "license": "MIT",
+
+    "$kref": "#/ckan/github/romsti/krpc_bridge",
+    "$vref": "#/ckan/ksp-avc",
+
+    "resources": {
+        "homepage": "https://romsti.github.io/krpc_bridge/",
+        "repository": "https://github.com/romsti/krpc_bridge",
+        "bugtracker": "https://github.com/romsti/krpc_bridge/issues"
+    },
+
+    "tags": [ "plugin", "library", "control" ],
+
+    "depends": [
+        { "name": "kRPC" }
+    ],
+
+    "suggests": [
+        { "name": "FMRSContinued" },
+        { "name": "MechJeb2" },
+        { "name": "HullcamVDSContinued" }
+    ],
+
+    "install": [
+        {
+            "find": "KRPC.Bridge",
+            "install_to": "GameData"
+        }
+    ]
+}

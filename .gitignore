@@ -1,0 +1,40 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Remembered KSP install, per machine (tools/find_ksp.py)
+ksp.path
+*.user
+*.suo
+*.userprefs
+
+# NuGet
+packages/
+*.nupkg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors
+.vs/
+.vscode/
+.idea/
+
+# Agent scratch files, recreated on demand and of no use to anyone reading the repo
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# The maintainer's own release runbook: how to tag, what to paste into the SpaceDock
+# form, how to open the CKAN pull request. Kept on disk, not published - it is process,
+# not documentation, and nobody using the mod needs it.
+docs/publishing/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

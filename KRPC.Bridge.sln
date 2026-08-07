@@ -1,0 +1,62 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+#
+# Adding a plugin:
+#     copy src\Plugins\Template to src\Plugins\<Name>
+#     dotnet sln KRPC.Bridge.sln add src\Plugins\<Name>\KRPC.Bridge.<Name>.csproj
+# then move it under the Plugins solution folder if you care about the tree view.
+# Build order comes from the ProjectReferences, never from the order here.
+#
+# src\Plugins\Template is deliberately NOT in this solution either. It is a file to COPY,
+# not a project to build: it declares a kRPC service of its own, so building it would ship
+# a fifth DLL and a fifth service to every user. build/verify still type-checks it, because
+# that project globs src/**/*.cs.
+#
+# build\verify and build\scan are deliberately NOT in this solution. Verify compiles
+# every source file into one assembly against stubs, and Scan is a net8.0 console app -
+# neither should be swept up by "build the solution". build.cmd runs all three in order.
+#
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Plugins", "Plugins", "{B1000000-0000-4000-9000-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.Core", "src\Core\KRPC.Bridge.Core.csproj", "{B1000000-0000-4000-9000-000000000010}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.Fmrs", "src\Plugins\Fmrs\KRPC.Bridge.Fmrs.csproj", "{B1000000-0000-4000-9000-000000000011}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.Ocisly", "src\Plugins\Ocisly\KRPC.Bridge.Ocisly.csproj", "{B1000000-0000-4000-9000-000000000012}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.MechJeb", "src\Plugins\MechJeb\KRPC.Bridge.MechJeb.csproj", "{B1000000-0000-4000-9000-000000000014}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B1000000-0000-4000-9000-000000000010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000010}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000010}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000010}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000011}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000011}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000011}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000011}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000012}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000014}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000014}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000014}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000014}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B1000000-0000-4000-9000-000000000011} = {B1000000-0000-4000-9000-000000000001}
+		{B1000000-0000-4000-9000-000000000012} = {B1000000-0000-4000-9000-000000000001}
+		{B1000000-0000-4000-9000-000000000014} = {B1000000-0000-4000-9000-000000000001}
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Runs kRPC's own service scanner against the built DLLs. See Program.cs for why this
+    is the single most valuable check in the repo.
+
+    Run it through build.cmd, which passes the right arguments. The command line is
+    documented at the top of Program.cs; it cannot be repeated here because MSBuild
+    forbids a double hyphen inside an XML comment and every dotnet flag has one.
+
+    Needs a KSP install with kRPC in it, because it loads the real assemblies rather than
+    stubs - that is the point: it is the server's own validation, not an approximation.
+
+    Deliberately references NOTHING. The scanner is reached by reflection, so this stays a
+    plain net8.0 console app while the assemblies it inspects are net472. BridgeUseStubs
+    keeps Directory.Build.targets from injecting the KSP references, which would drag a
+    net472 reference set into a net8.0 project for no benefit.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.Scan</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Scan</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+</Project>

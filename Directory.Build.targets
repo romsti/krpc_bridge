@@ -1,0 +1,104 @@
+<Project>
+
+  <!--
+    Imported after every csproj - which is late. Late enough that it can READ what a
+    project set, but too late to change where the output goes; see the note below.
+  -->
+
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <!-- Supplies the .NET Framework reference assemblies, so no Visual Studio needed.
+         Without it the build fails with MSB3644. PrivateAssets stops it flowing into
+         projects that reference this one. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Game, engine and kRPC assemblies.
+
+    Private=False on every one of them. These DLLs already live in the player's install;
+    copying them next to our own output would put a second, stale copy inside GameData
+    and KSP would load both. That is the classic way to break an install.
+
+    Skipped entirely when BridgeUseStubs is true: the verify harness compiles against
+    build/stubs instead and needs no KSP install at all.
+  -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(ManagedPath)\UnityEngine*.dll">
+      <Name>UnityEngine</Name>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="$(ManagedPath)\Assembly-CSharp.dll">
+      <Name>Assembly-CSharp</Name>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="$(ManagedPath)\Assembly-CSharp-firstpass.dll">
+      <Name>Assembly-CSharp-firstpass</Name>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="$(KRPCPath)\KRPC.dll">
+      <Name>KRPC</Name>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="$(KRPCPath)\KRPC.Core.dll">
+      <Name>KRPC.Core</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!--
+      Where the DLL lands is decided in each csproj, NOT here, and that is not a style
+      choice.
+
+      This file is imported at the very end of the build, and by then the SDK has already
+      computed TargetPath from whatever OutputPath was at the time. Setting OutputPath
+      here therefore changes the property and nothing else: the build reports success and
+      writes to src/<Project>/bin/Release/ anyway, leaving dist/ empty - so the signature
+      scan finds no DLLs and package.py has nothing to zip. Silent, and only visible if
+      you read the path in the build summary.
+
+      Each csproj sets OutputPath in its own body instead, which is early enough. DistRoot
+      comes from Directory.Build.props, so the rule "Core at the root, plugins in
+      Plugins/" is still written once per project and nowhere else.
+
+      DocumentationFile is not set at all: GenerateDocumentationFile=true in .props makes
+      the SDK put the .xml next to the DLL by itself, wherever that turns out to be.
+    -->
+    <BridgeOutDir>$(OutputPath)</BridgeOutDir>
+  </PropertyGroup>
+
+  <!-- Fail with a readable message instead of a wall of CS0246. -->
+  <Target Name="ValidateKSPPaths" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(BridgeUseStubs)'!='true'">
+    <Error Condition="!Exists('$(ManagedPath)\Assembly-CSharp.dll')"
+           Text="Assembly-CSharp.dll not found under '$(ManagedPath)'. Pass -p:KSPRoot=&quot;path\to\KSP&quot;." />
+    <Error Condition="!Exists('$(KRPCPath)\KRPC.Core.dll')"
+           Text="KRPC.Core.dll not found under '$(KRPCPath)'. Is kRPC installed? Run: dir &quot;$(KRPCPath)\*.dll&quot;" />
+  </Target>
+
+  <!--
+    Optional deploy. Off by default: build with -p:Deploy=true.
+
+    The destination is derived from OutputPath rather than named, so it cannot drift out
+    of step with where the build actually wrote. dist/ already mirrors GameData exactly,
+    so "the part of OutputPath below DistRoot" IS the part of GameData to append - which
+    is empty for the Core and "Plugins\" for a plugin, with no per-project knowledge here.
+
+    build.cmd does not use this; it xcopies the whole dist tree, which also picks up
+    LICENSE, NOTICE and the .version file. This target is for deploying one project on
+    its own while iterating.
+  -->
+  <Target Name="DeployToKSP" AfterTargets="Build"
+          Condition="'$(Deploy)'=='true' and '$(BridgeUseStubs)'!='true'">
+    <PropertyGroup>
+      <BridgeDeploySubdir>$(OutputPath.Replace('$(DistRoot)', ''))</BridgeDeploySubdir>
+      <BridgeDeployDir>$(KSPRoot)\GameData\KRPC.Bridge\$(BridgeDeploySubdir)</BridgeDeployDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(BridgeDeployDir)" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll;$(OutputPath)$(AssemblyName).xml"
+          DestinationFolder="$(BridgeDeployDir)"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="  deployed $(AssemblyName) -> $(BridgeDeployDir)" />
+  </Target>
+
+</Project>

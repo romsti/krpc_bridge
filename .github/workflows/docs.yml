@@ -1,0 +1,87 @@
+# Named "docs site" rather than "docs" because build.yml already has a job called docs -
+# the one that checks the reference against the C#. Two things called docs in the Actions
+# list, one green and one red, is a bad five minutes.
+name: docs site
+
+# Build the documentation site and publish it to GitHub Pages.
+#
+# The site is generated from the repo's own docs/ folder, so there is nothing to keep in
+# sync by hand: the API reference served at romsti.github.io/krpc_bridge is the same
+# API.md that tools/check_docs.py validates against the C# in the `build` workflow.
+#
+# --strict turns a broken internal link or a page missing from the nav into a failed
+# build rather than a 404 someone finds later.
+#
+# ONE-TIME SETUP: in the repository settings, Pages -> Build and deployment -> Source
+# must be set to "GitHub Actions". Until that is done this workflow builds fine and the
+# deploy step fails.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# NO paths: filter, deliberately, after one bit me.
+#
+# The obvious version of this workflow only runs when docs/ or mkdocs.yml changed, which
+# saves forty seconds on a C#-only push. But GitHub computes "what changed" from the
+# push's before/after pair, and a FORCE-PUSH that replaces the tip with an unrelated
+# commit gives it nothing to diff - so the filter matches nothing and the workflow is
+# silently skipped. No run appears in the Actions tab at all, which looks exactly like a
+# broken workflow file. The whole 1.0.0 history was rewritten as a single amended commit
+# and force-pushed repeatedly, so every single push hit that case: build.yml, which has
+# no filter, ran eight times; this one ran zero.
+#
+# Forty seconds is not worth a trigger that fails in the one situation nobody debugs.
+
+# Read the repo, write the Pages deployment, and mint the token the deploy action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deployments race. Do not cancel one in flight: a half-published site is
+# worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `cache: pip`. It looks free and is not: setup-python builds its cache key from
+      # a requirements.txt or pyproject.toml, and this repo has neither, so the step fails
+      # outright with "No file matched to [**/requirements.txt or **/pyproject.toml]".
+      # There is exactly one package to install and it takes fifteen seconds.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs Material
+        # Pinned to the 9.x line on purpose. The Material authors have announced that
+        # MkDocs 2.0 removes the plugin system and rewrites theming with no migration
+        # path, so an unpinned install would one day rebuild this site into rubble on a
+        # push that changed one sentence.
+        run: python -m pip install --upgrade pip "mkdocs-material>=9.7,<10"
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

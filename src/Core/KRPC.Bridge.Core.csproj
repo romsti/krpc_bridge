@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Core. Ships at the ROOT of GameData\KRPC.Bridge\. Everything else (target framework, KSP references, doc file, deploy
+    target) comes from Directory.Build.props / .targets at the repo root.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Core</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Core</RootNamespace>
+
+    <!-- The Core ships at the ROOT of the mod folder. Set here, in the project body,
+         because Directory.Build.targets is imported too late to move the real output -
+         see the note there. -->
+    <OutputPath>$(DistRoot)</OutputPath>
+  </PropertyGroup>
+
+</Project>
