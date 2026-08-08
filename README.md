@@ -3,9 +3,13 @@
 **kRPC services for FMRS, OCISLY and MechJeb 2.** Three Kerbal Space Program mods that
 have no scriptable interface at all, made drivable from Python.
 
+[![Documentation](https://img.shields.io/badge/docs-romsti.github.io-deeppink)](https://romsti.github.io/krpc_bridge/)
 [![KSP 1.12.x](https://img.shields.io/badge/KSP-1.12.x-blue)](https://www.kerbalspaceprogram.com/)
 [![kRPC 0.6](https://img.shields.io/badge/kRPC-0.6.x-blue)](https://github.com/krpc/krpc)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+📖 **[Full documentation](https://romsti.github.io/krpc_bridge/)** — all 88 procedures,
+a scripting guide, and search.
 
 ```python
 import krpc
