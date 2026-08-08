@@ -32,7 +32,7 @@ The cameras come back on their own.
 - **New here?** The [scripting guide](SCRIPTING.md) walks a complete booster recovery from
   arming to the recovery ledger, then the six things that go wrong.
 
-- **Looking for a member?** The [API reference](API.md) has all 88 procedures by service,
+- **Looking for a member?** The [API reference](API.md) has all 129 procedures by service,
   with units, return shapes and what each one raises. Use the search box.
 
 - **Writing a plugin?** [Architecture](ARCHITECTURE.md) explains the Core, the load order

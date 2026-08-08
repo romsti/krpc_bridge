@@ -113,6 +113,27 @@ public class Vessel : UnityEngine.MonoBehaviour
     public float totalMass;
     public List<Part> parts = new List<Part> ();
     public double missionTime;
+    public Orbit orbit;
+    public PatchedConicSolver patchedConicSolver;
+}
+
+// The maneuver-node side of the stock API, used by the MechJeb plugin's maneuver planner.
+// MechJeb computes the burn and places the node; we only need to find where the last one
+// ends so a second operation can be planned from there, exactly as MechJeb's own window
+// does. The node itself is then read by stock kRPC, not by us.
+public class Orbit
+{
+}
+
+public class ManeuverNode
+{
+    public double UT;
+    public Orbit nextPatch;
+}
+
+public class PatchedConicSolver
+{
+    public List<ManeuverNode> maneuverNodes = new List<ManeuverNode> ();
 }
 
 public class Part : UnityEngine.MonoBehaviour

@@ -17,5 +17,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.MechJeb")]
 [assembly: AssemblyDescription ("kRPC service for MechJeb 2: drive the ascent autopilot and take back the staging decision.")]
-[assembly: AssemblyVersion ("1.0.0.0")]
-[assembly: AssemblyFileVersion ("1.0.0.0")]
+[assembly: AssemblyVersion ("1.1.0.0")]
+[assembly: AssemblyFileVersion ("1.1.0.0")]

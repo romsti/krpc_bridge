@@ -142,6 +142,12 @@ namespace KRPC.Bridge.MechJeb
                 ResolveUserPool (poolType);
             }
 
+            // Everything past the ascent path: the other twenty modules, and the maneuver
+            // planner. Both are resolved separately and neither gates Resolved below - a
+            // MechJeb that moved the planner should cost you the planner, not the service.
+            MechJebModules.Resolve (CoreType, EnabledProp);
+            MechJebManeuvers.Resolve (assembly, extensionsType);
+
             // Usable as soon as we can reach a core and its ascent module. Everything
             // else is reported member by member, so a partial resolve still says
             // something useful instead of dying whole.
@@ -149,12 +155,14 @@ namespace KRPC.Bridge.MechJeb
 
             Report = string.Format (
                 "assembly={0} | MechJebCore={1} GetMasterMechJeb={2} AscentSettings={3} Staging={4} "
-                + "Ascent={5} || Autostage={6} AscentType={7} Enabled={8} Users={9} || pool: {10}",
+                + "Ascent={5} || Autostage={6} AscentType={7} Enabled={8} Users={9} || pool: {10} "
+                + "|| modules: {11} || maneuvers: {12}",
                 assembly.GetName ().Name,
                 CoreType != null, GetMasterMechJeb != null, AscentSettingsField != null,
                 StagingField != null, AscentProp != null,
                 AutostageProp != null, AscentTypeProp != null,
-                EnabledProp != null, UsersProp != null || UsersField != null, poolReport);
+                EnabledProp != null, UsersProp != null || UsersField != null, poolReport,
+                MechJebModules.Report, MechJebManeuvers.Report);
 
             return new PluginStatus {
                 Available = Resolved,

@@ -4,6 +4,77 @@ All notable changes to KRPC.Bridge. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-08-08
+
+MechJeb goes from one module to all of them. 1.0.0 could reach `AscentSettings` and
+nothing else, because the by-name settings mechanism was wired to that single type; this
+release points it at any module and adds the maneuver planner. Forty-one new procedures,
+none of which names a MechJeb class — the previous kRPC-to-MechJeb bridge died binding
+about forty-eight type names, and the same failure applies at member granularity, just
+more slowly.
+
+FMRS and OCISLY are unchanged.
+
+### Added
+
+**MechJeb — any module, by name**
+
+- `modules`, `describe_module()` — what this MechJeb has, read from the live assembly.
+  `describe_module` reports each member's name, channel, type, whether it is writable and
+  whether writing it touches the player's saved configuration. It is the member that turns
+  a MechJeb rename into a one-string script edit.
+- `setting()` / `set_setting()`, `flag()` / `set_flag()`, `enum_value()` /
+  `set_enum_value()` / `enum_options()`, `list_value()` / `set_list_value()`,
+  `text_value()` — five channels, because MechJeb's settings are not all doubles. Choices
+  are carried as their names, so a script says `"KEEP_SURFACE"` rather than `2`, and the
+  legal values come from the installed build.
+- `engage()`, `disengage()`, `module_enabled()`, `module_users()` — with the differences
+  handled: self-pinned modules refuse to be disengaged rather than silently breaking the
+  rest of MechJeb, and settings bags say they are not autopilots instead of appearing to
+  work.
+
+What that unlocks immediately, all previously unreachable: the staging controller's
+`AutostageLimit`, `HotStaging`, `DropSolids` and the three fairing-jettison criteria; the
+thrust limiters for dynamic pressure, acceleration, flameout and overheating; the target
+controller's latitude and longitude.
+
+**MechJeb — the landing predictor**
+
+- `landing_predicted`, `landing_latitude`, `landing_longitude`, `ignition_countdown`,
+  `landing_countdown`, `landing_delta_v`, `landing_slope`. MechJeb's suicide-burn solver
+  runs whenever you are in flight and republishes about once a second, so these are field
+  reads and safe to stream. **Stock kRPC has no impact prediction of any kind**, and this
+  one propagates through the atmosphere rather than guessing ballistically.
+
+**MechJeb — the maneuver planner**
+
+- `maneuver_operations`, `maneuver_operation_name()`, `describe_maneuver()`,
+  `maneuver_parameter()` / `set_maneuver_parameter()`, `maneuver_flag()` /
+  `set_maneuver_flag()`, `maneuver_time_references()` / `set_maneuver_time_reference()`,
+  `create_maneuver_nodes()`, `maneuver_warning`.
+- The nodes are ordinary KSP maneuver nodes: MechJeb computes and places, and you read the
+  result back with **stock kRPC's `vessel.control.nodes`**. That is what keeps the whole
+  planner to eleven procedures — MechJeb's transfer maths returns `Vector3d` and C#
+  `ValueTuple`, neither of which is a legal kRPC type, and a malformed signature takes the
+  entire kRPC server down. Nothing of the sort crosses this boundary.
+- Interplanetary transfers are excluded and say so: that operation's solver is built by
+  MechJeb's GUI and cannot be driven headlessly.
+
+**MechJeb — the three modules whose entry point is a method**
+
+- `land_at_target()`, `land_untargeted()`, `stop_landing()`, `execute_node()`,
+  `execute_all_nodes()`, `abort_node()`, `smart_ass_engage()`. Enabling those modules
+  without calling the method leaves them running with nothing to do.
+
+### Fixed
+
+- `ascent_setting_names` and `ascent_flag_names` filter out MechJeb's public backing
+  fields more thoroughly. The leading-underscore rule caught `_autostage` and missed
+  `AscentTypeInteger` and the four `DisplayModule` pairs; a field is now hidden when a
+  *writable* property covers it, including through a `Config`, `Internal` or `Integer`
+  suffix. Fields under a read-only property are kept, because there they are the only way
+  to write the setting.
+
 ## [1.0.0] — 2026-08-07
 
 First public release. The mod was previously a single unreleased `KRPC.Bridge.dll`; this

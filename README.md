@@ -61,7 +61,7 @@ member when something has moved.
 
 ## What you get
 
-Eighty-eight remote procedures across four services. The full reference is in
+A hundred and twenty-nine remote procedures across four services. The full reference is in
 [`docs/API.md`](docs/API.md); the highlights:
 
 **`conn.fmrs`** — arm and disarm; list dropped stages with their separation timestamps,

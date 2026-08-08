@@ -14,7 +14,8 @@ launching the game.
 - [`conn.bridge`](#connbridge) — Core: what loaded, events, jobs, HUD, reflection probe
 - [`conn.fmrs`](#connfmrs) — dropped stages, jumps, recovery ledger
 - [`conn.ocisly`](#connocisly) — camera streams across a scene reload
-- [`conn.mech_jeb`](#connmech_jeb) — ascent autopilot and staging
+- [`conn.mech_jeb`](#connmech_jeb) — ascent, staging, every module by name, the landing
+  predictor and the maneuver planner
 
 ---
 
@@ -526,4 +527,181 @@ mj.set_ascent_setting("TurnStartAltitude", 2000)
 mj.autostage = False                             # before engaging
 mj.ascent_enabled = True
 assert mj.staging_users == 0                     # check it took
+```
+
+---
+
+### Any module, by name
+
+The members above cover the ascent path, which is what this service was built for. Beyond
+it, MechJeb has twenty other modules and roughly two hundred settings, and they are all
+reachable through five accessors rather than two hundred procedures.
+
+Nothing here is hard-coded. `modules` is read from the MechJeb in your GameData, and
+`describe_module()` reports each member's name, how to reach it, its type, whether it can
+be written and whether writing it touches the player's saved configuration. A MechJeb
+release that renames a setting costs you a string, not a mod update — which is the whole
+reason the previous bridge to MechJeb is dead and this one is not.
+
+| Member | Type | Notes |
+|---|---|---|
+| `modules` | `list[str]` | The modules MechJebCore publishes by short name: `Ascent`, `AscentSettings`, `Attitude`, `Landing`, `Node`, `Staging`, `Target`, `Thrust`, `Hoverslam`, `SmartASS`, `StageStats`, `Warp` and the rest. |
+| `describe_module(module)` | `list[str]` | Rows `name⇥channel⇥type⇥rw⇥persistence`. **Read this first.** |
+| `module_enabled(module)` | `bool` | Whether MechJeb is running it right now. |
+| `module_users(module)` | `int` | How many things want it running. `-1` if the pool could not be read. |
+| `engage(module)` | `int` | Ask for a module. Returns the resulting user count. |
+| `disengage(module)` | `int` | Withdraw your request. Returns the remaining user count. |
+| `setting(module, name)` | `float` | Read a number. |
+| `set_setting(module, name, value)` | — | Write a number. SI units: 100 km is `100000`. |
+| `flag(module, name)` | `bool` | Read a boolean. |
+| `set_flag(module, name, value)` | — | Write a boolean. |
+| `enum_value(module, name)` | `str` | Read a multiple-choice setting **by name** — `"KEEP_SURFACE"`, not `2`. |
+| `set_enum_value(module, name, value)` | — | Write one. Case-insensitive; an unknown value raises with the list this build offers. |
+| `enum_options(module, name)` | `list[str]` | What that choice accepts. Empty if the member is not a choice. |
+| `list_value(module, name)` | `str` | Read an integer list, in MechJeb's own text form. |
+| `set_list_value(module, name, value)` | — | Write one. Both `"1,2,3"` and `"1-3"` are accepted. |
+| `text_value(module, name)` | `str` | Read anything as text — the status strings, or a member whose type has no channel. |
+
+**The channel column tells you which accessor to use.** `number` → `setting`, `flag` →
+`flag`, `enum` → `enum_value`, `list` → `list_value`, `text` → read-only via `text_value`,
+`unsupported` → the member exists but its type cannot cross kRPC; it is listed rather than
+hidden so you know it is there.
+
+**Watch the persistence column.** `persistent:GLOBAL` means writing that setting changes
+the player's MechJeb configuration for **every vessel in every save on that install**, not
+just this flight. Most ascent settings are global. That is MechJeb's design and the bridge
+does not block it, but it is worth knowing before a script tunes something.
+
+**Engaging is not uniform, and the differences are handled for you.** Most modules run
+while at least one user wants them. Some pin themselves — `Thrust` holds the throttle
+limiters, `Target` is what everything else aims at, `StageStats` is the delta-v simulation,
+`Hoverslam` is the landing predictor — so `engage` on those is a no-op and `disengage` is
+refused rather than silently breaking the rest of MechJeb. `AscentSettings` and `Settings`
+are settings bags with no autopilot behind them and cannot be engaged at all; the ascent
+autopilot is `Ascent`.
+
+Three modules need more than a pool entry and have their own procedures below. And in a
+career save MechJeb may disable a module again a frame later if the part or tech is not
+researched, without an error — which is why `engage` returns the user count instead of
+nothing, and why `module_enabled` is worth checking after.
+
+```python
+mj = conn.mech_jeb
+print("\n".join(mj.describe_module("Staging")))
+# AutostageLimit          number  EditableInt         rw  persistent:GLOBAL
+# DropSolids              flag    Boolean             rw  persistent:GLOBAL
+# FairingMaxDynamicPressure number EditableDoubleMult rw  persistent:GLOBAL
+# HotStaging              flag    Boolean             rw  persistent:GLOBAL
+
+mj.set_setting("Staging", "AutostageLimit", 3)      # stage, but never past stage 3
+mj.set_flag("Staging", "DropSolids", True)          # drop solid boosters mid-burn
+mj.set_setting("Staging", "FairingMinAltitude", 55000)
+```
+
+### The landing predictor
+
+MechJeb runs a suicide-burn solver whenever you are in flight, republishing about once a
+second. Nothing has to be engaged and reading it costs a field access, so these are safe to
+stream.
+
+| Member | Type | Notes |
+|---|---|---|
+| `landing_predicted` | `bool` | Whether there is a solution at all. |
+| `landing_latitude` | `float` | Predicted impact latitude, degrees. `NaN` with no solution. |
+| `landing_longitude` | `float` | Predicted impact longitude, degrees. `NaN` with no solution. |
+| `ignition_countdown` | `float` | Seconds until the burn must start. `NaN` with no solution. |
+| `landing_countdown` | `float` | Seconds until touchdown. `NaN` with no solution. |
+| `landing_delta_v` | `float` | Delta-v the burn needs, m/s. `NaN` with no solution. |
+| `landing_slope` | `float` | Terrain slope at the predicted site, degrees. `NaN` with no solution. |
+
+**Stock kRPC has no impact prediction of any kind**, and this one propagates through the
+atmosphere rather than guessing ballistically. It is the number a boostback burn exists to
+null out, and an independent check on your own descent solver. Test `landing_predicted`, or
+`math.isnan()`, before using any of the others.
+
+### Landing, nodes and SmartASS
+
+Three modules do nothing useful when merely enabled, because their real entry point is a
+method.
+
+| Member | Notes |
+|---|---|
+| `land_at_target()` | Start the landing autopilot on the current target site. **Deletes every maneuver node on the vessel** — MechJeb does that itself. Competes with any descent guidance of your own. |
+| `land_untargeted()` | Same, with no target: come down wherever the trajectory leads. |
+| `stop_landing()` | The correct way out. Withdrawing from the pool leaves it enabled with a step still set. |
+| `execute_node()` | Execute the next maneuver node. |
+| `execute_all_nodes()` | Execute every node in turn. |
+| `abort_node()` | Stop executing. |
+| `smart_ass_engage()` | Push SmartASS's mode and target to the attitude controller. Setting its members does nothing without this — and with `autoDisableSmartASS` on, which is the default, SmartASS stands down whenever another autopilot takes attitude. |
+
+### The maneuver planner
+
+MechJeb can compute a Hohmann transfer, a plane match, an intercept, a moon return, a
+resonant orbit and a dozen other burns. This exposes all of them, and the design is worth a
+sentence because it decides how you use the result.
+
+**The nodes are ordinary KSP maneuver nodes.** MechJeb computes the burn and places it; the
+bridge then gets out of the way. You read it back with **stock kRPC's
+`vessel.control.nodes`** — prograde, normal, radial, UT — and execute or delete it with
+tooling you already have. No vector, tuple or MechJeb type crosses this boundary, which is
+also why the whole planner needs only eleven procedures.
+
+| Member | Type | Notes |
+|---|---|---|
+| `maneuver_operations` | `list[str]` | Operations by **class** name: `OperationCircularize`, `OperationApoapsis`, `OperationGeneric` (Hohmann transfer), `OperationPlane`, `OperationLambert`, `OperationMoonReturn`… |
+| `maneuver_operation_name(op)` | `str` | The label MechJeb shows, in the game's language. Display only. |
+| `describe_maneuver(op)` | `list[str]` | Its parameters, same format as `describe_module`. Includes the burn-time parameters. |
+| `maneuver_parameter(op, name)` | `float` | Read a numeric parameter. |
+| `set_maneuver_parameter(op, name, v)` | — | Write one. SI units: a 200 km apoapsis is `200000`. |
+| `maneuver_flag(op, name)` | `bool` | Read a boolean parameter. |
+| `set_maneuver_flag(op, name, v)` | — | Write one. |
+| `maneuver_time_references(op)` | `list[str]` | When this operation will accept the burn: `"APOAPSIS"`, `"CLOSEST_APPROACH"`, `"X_FROM_NOW"`… Empty means it computes its own timing. |
+| `set_maneuver_time_reference(op, ref)` | — | Choose one. Rejected, with the list it accepts, if the operation does not allow it. |
+| `create_maneuver_nodes(op, append=True)` | `int` | **The one that acts.** Plans and places; returns how many nodes it made. |
+| `maneuver_warning` | `str` | A caveat from the last plan, or empty. |
+
+**Class names, not labels.** MechJeb's operation labels are translated, one is hardcoded
+English while the rest are not, and one has a stray quotation mark in the English file. A
+script keyed on a label breaks on a French install.
+
+**There is no absolute-UT burn time.** For a specific moment, select `"X_FROM_NOW"` and set
+`LeadTime` to the number of seconds from now.
+
+**The burn-time selection is shared with MechJeb's own window.** It is one object per
+operation *type*, not per instance, so setting it also changes what the player sees in the
+Maneuver Planner — and a player changing it there changes what your script gets. MechJeb's
+design, not a choice made here.
+
+**`append=True` chains plans.** With nodes already present, the operation is planned from
+the end of the last one rather than from now — so circularising after a change of apoapsis
+circularises at the *new* apoapsis, which is what MechJeb's own window does.
+
+**Failure is explained, warnings are not raised.** An impossible burn — no target, target
+in a different sphere of influence, no ascending node with it, an apoapsis below the
+surface — throws with MechJeb's own message. But three operations plan a perfectly good
+burn and still have something to say, so that goes to `maneuver_warning` instead of
+rejecting a usable plan.
+
+**Interplanetary transfers are not supported.** `OperationAdvancedTransfer`'s solver is
+created by MechJeb's GUI, so driving it headlessly returns "Started computation" forever
+rather than a plan. It is the one thing here that has to be done another way.
+
+```python
+mj = conn.mech_jeb
+vessel = conn.space_center.active_vessel
+
+conn.space_center.target_vessel = station
+conn.space_center.wait()                      # MechJeb sees the target next tick, not now
+
+mj.set_maneuver_time_reference("OperationPlane", "REL_HIGHEST_AD")
+mj.create_maneuver_nodes("OperationPlane")    # match planes
+
+mj.set_maneuver_parameter("OperationGeneric", "LagTime", 0)
+mj.create_maneuver_nodes("OperationGeneric")  # then a Hohmann transfer, from the last node
+
+for node in vessel.control.nodes:             # ordinary kRPC nodes from here on
+    print(f"{node.ut:.0f}  {node.delta_v:.1f} m/s")
+
+if mj.maneuver_warning:
+    print("MechJeb says:", mj.maneuver_warning)
 ```

@@ -17,5 +17,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Ocisly")]
 [assembly: AssemblyDescription ("kRPC service for OfCourseIStillLoveYou: re-open and re-arm Hullcam camera streams after a scene reload.")]
-[assembly: AssemblyVersion ("1.0.0.0")]
-[assembly: AssemblyFileVersion ("1.0.0.0")]
+[assembly: AssemblyVersion ("1.1.0.0")]
+[assembly: AssemblyFileVersion ("1.1.0.0")]

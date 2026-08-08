@@ -20,5 +20,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Core")]
 [assembly: AssemblyDescription ("Shared runtime for the krpc_bridge plugins: main-thread dispatch, background jobs, GameEvents bus, mod discovery.")]
-[assembly: AssemblyVersion ("1.0.0.0")]
-[assembly: AssemblyFileVersion ("1.0.0.0")]
+[assembly: AssemblyVersion ("1.1.0.0")]
+[assembly: AssemblyFileVersion ("1.1.0.0")]

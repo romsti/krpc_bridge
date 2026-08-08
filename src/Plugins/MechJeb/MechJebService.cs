@@ -507,6 +507,536 @@ namespace KRPC.Bridge.MechJeb
         }
 
         // ==================================================================
+        // Any module, by name
+        // ==================================================================
+
+        /// <summary>
+        /// The modules MechJebCore publishes under a short name - "Staging", "Thrust",
+        /// "Target", "Hoverslam" and the rest - in alphabetical order.
+        ///
+        /// Read from the live assembly, not a list written here, so it is right for the
+        /// MechJeb in your GameData. Modules MechJebCore does not hold a field for, such as
+        /// the maneuver planner or the docking autopilot, are still reachable: pass their
+        /// class name instead, for example "MechJebModuleRendezvousAutopilot".
+        /// </summary>
+        [KRPCProperty]
+        public static IList<string> Modules {
+            get { return MechJebModules.Names (MechJebApi.Core); }
+        }
+
+        /// <summary>
+        /// Every member of a module, as "name(TAB)channel(TAB)type(TAB)rw(TAB)persistence".
+        ///
+        /// THE MEMBER TO READ FIRST, and the one that keeps a script working across MechJeb
+        /// updates. The channel tells you which accessor carries it - "number", "flag",
+        /// "enum", "list", "text" or "unsupported" - the fourth column is "rw" or "r", and
+        /// the last says whether writing it also writes the player's saved configuration.
+        ///
+        /// "persistent:GLOBAL" deserves attention: that scope is not per-vessel and not
+        /// per-save, it is every vessel in every save on that install. Tuning an ascent
+        /// setting for one launcher quietly changes the default for all of them.
+        /// </summary>
+        /// <param name="module">A name from <see cref="Modules"/>, or any MechJeb module class name.</param>
+        [KRPCProcedure]
+        public static IList<string> DescribeModule (string module)
+        {
+            return MechJebMembers.Describe (MechJebModules.Get (module));
+        }
+
+        /// <summary>Whether MechJeb currently has this module running.</summary>
+        [KRPCProcedure]
+        public static bool ModuleEnabled (string module)
+        {
+            return MechJebModules.EnabledOf (MechJebModules.Get (module));
+        }
+
+        /// <summary>
+        /// How many things are asking for this module to run. `-1` if the pool could not be
+        /// read. Non-zero after your own <see cref="Disengage"/> means something else still
+        /// wants it - MechJeb's own window, or another autopilot - and it keeps running.
+        /// </summary>
+        [KRPCProcedure]
+        public static int ModuleUsers (string module)
+        {
+            return MechJebModules.UserCount (MechJebModules.Get (module));
+        }
+
+        /// <summary>
+        /// Turn a module on, and report how many users it then has.
+        ///
+        /// Engaging is not uniform across MechJeb and this hides the difference. Most
+        /// modules run while at least one user wants them. A few pin themselves and are
+        /// always on, so engaging is a no-op rather than an error. Settings modules cannot
+        /// be engaged at all and say so - "AscentSettings" is the common mistake, the
+        /// autopilot behind it is "Ascent".
+        ///
+        /// Three modules need more than this and have their own procedures: Landing wants
+        /// <see cref="LandAtTarget"/>, Node wants <see cref="ExecuteNode"/>, SmartASS wants
+        /// <see cref="SmartAssEngage"/>. Enabling those without calling the method leaves
+        /// them running with nothing to do.
+        ///
+        /// In a career save MechJeb may disable a module again a frame later if the
+        /// required part or tech is not researched, with no error. That is why this returns
+        /// the user count instead of nothing - check <see cref="ModuleEnabled"/> after.
+        /// </summary>
+        [KRPCProcedure]
+        public static int Engage (string module)
+        {
+            return MechJebModules.Engage (module, MechJebModules.Get (module));
+        }
+
+        /// <summary>
+        /// Withdraw your request for a module. Refused for the modules that run themselves
+        /// and that the rest of MechJeb depends on - the throttle limiters, the target
+        /// controller, the delta-v simulation, the landing predictor.
+        /// </summary>
+        [KRPCProcedure]
+        public static int Disengage (string module)
+        {
+            return MechJebModules.Disengage (module, MechJebModules.Get (module));
+        }
+
+        /// <summary>Read a numeric setting on any module. See <see cref="DescribeModule"/> for the names.</summary>
+        [KRPCProcedure]
+        public static double Setting (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.ReadNumber (MechJebMembers.Find (target, name, module), target);
+        }
+
+        /// <summary>
+        /// Write a numeric setting on any module.
+        ///
+        /// Units are MechJeb's own - metres, m/s, degrees, seconds. Altitudes are the SI
+        /// value, so 100 km is 100000 even though MechJeb's own box shows "100".
+        /// </summary>
+        [KRPCProcedure]
+        public static void SetSetting (string module, string name, double value)
+        {
+            var target = MechJebModules.Get (module);
+            var member = MechJebMembers.Find (target, name, module);
+            if (!MechJebMembers.Writable (member, target))
+                throw new InvalidOperationException (
+                    module + "." + name + " is read-only in this MechJeb");
+            MechJebMembers.WriteNumber (member, target, value);
+        }
+
+        /// <summary>Read a boolean setting on any module.</summary>
+        [KRPCProcedure]
+        public static bool Flag (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.ReadFlag (MechJebMembers.Find (target, name, module), target);
+        }
+
+        /// <summary>Write a boolean setting on any module.</summary>
+        [KRPCProcedure]
+        public static void SetFlag (string module, string name, bool value)
+        {
+            var target = MechJebModules.Get (module);
+            var member = MechJebMembers.Find (target, name, module);
+            if (!MechJebMembers.Writable (member, target))
+                throw new InvalidOperationException (
+                    module + "." + name + " is read-only in this MechJeb");
+            MechJebMembers.WriteFlag (member, target, value);
+        }
+
+        /// <summary>
+        /// Read a multiple-choice setting as its name, for example "KEEP_SURFACE" rather
+        /// than 2. <see cref="EnumOptions"/> lists what it will accept.
+        /// </summary>
+        [KRPCProcedure]
+        public static string EnumValue (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.ReadEnum (MechJebMembers.Find (target, name, module), target);
+        }
+
+        /// <summary>Write a multiple-choice setting by name. Case-insensitive.</summary>
+        [KRPCProcedure]
+        public static void SetEnumValue (string module, string name, string value)
+        {
+            var target = MechJebModules.Get (module);
+            var member = MechJebMembers.Find (target, name, module);
+            if (!MechJebMembers.Writable (member, target))
+                throw new InvalidOperationException (
+                    module + "." + name + " is read-only in this MechJeb");
+            MechJebMembers.WriteEnum (member, target, value);
+        }
+
+        /// <summary>
+        /// The values a multiple-choice setting accepts, read from the installed MechJeb.
+        /// Empty when the member is not a choice.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> EnumOptions (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.EnumNames (MechJebMembers.Find (target, name, module));
+        }
+
+        /// <summary>
+        /// Read a list-of-integers setting, in MechJeb's own text form - "1,2,3" or "1-3".
+        /// </summary>
+        [KRPCProcedure]
+        public static string ListValue (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.ReadList (MechJebMembers.Find (target, name, module), target);
+        }
+
+        /// <summary>
+        /// Write a list-of-integers setting. Both "1,2,3" and "1-3" are accepted, because
+        /// they are what MechJeb's own parser accepts.
+        /// </summary>
+        [KRPCProcedure]
+        public static void SetListValue (string module, string name, string value)
+        {
+            var target = MechJebModules.Get (module);
+            MechJebMembers.WriteList (MechJebMembers.Find (target, name, module), target, value);
+        }
+
+        /// <summary>
+        /// Read any member as text. Works for the status strings MechJeb keeps for its own
+        /// window, which are otherwise unreachable, and as a last resort for a member whose
+        /// type has no channel.
+        /// </summary>
+        [KRPCProcedure]
+        public static string TextValue (string module, string name)
+        {
+            var target = MechJebModules.Get (module);
+            return MechJebMembers.ReadText (MechJebMembers.Find (target, name, module), target);
+        }
+
+        // ==================================================================
+        // The landing predictor
+        // ==================================================================
+
+        /// <summary>
+        /// Whether MechJeb currently has a suicide-burn solution.
+        ///
+        /// The predictor runs whenever you are in flight and republishes about once a
+        /// second, so nothing has to be engaged and reading it is free. When it has no
+        /// answer every number below is NaN, which is what this checks.
+        /// </summary>
+        [KRPCProperty]
+        public static bool LandingPredicted {
+            get {
+                var value = Hoverslam ("IgnitionUT");
+                return !double.IsNaN (value) && !double.IsInfinity (value);
+            }
+        }
+
+        /// <summary>
+        /// Latitude of the predicted impact point, in degrees. NaN when there is no
+        /// solution.
+        ///
+        /// WORTH KNOWING: stock kRPC has no impact prediction of any kind, and this is a
+        /// full atmospheric propagation rather than a ballistic guess. It is the number a
+        /// boostback burn exists to null out.
+        /// </summary>
+        [KRPCProperty]
+        public static double LandingLatitude {
+            get { return Hoverslam ("Lat"); }
+        }
+
+        /// <summary>Longitude of the predicted impact point, in degrees. NaN when there is no solution.</summary>
+        [KRPCProperty]
+        public static double LandingLongitude {
+            get { return Hoverslam ("Lng"); }
+        }
+
+        /// <summary>Seconds until the suicide burn must start. NaN when there is no solution.</summary>
+        [KRPCProperty]
+        public static double IgnitionCountdown {
+            get { return Hoverslam ("IgnitionCountdown"); }
+        }
+
+        /// <summary>Seconds until touchdown on the current trajectory. NaN when there is no solution.</summary>
+        [KRPCProperty]
+        public static double LandingCountdown {
+            get { return Hoverslam ("LandingCountdown"); }
+        }
+
+        /// <summary>Delta-v the predicted suicide burn needs, m/s. NaN when there is no solution.</summary>
+        [KRPCProperty]
+        public static double LandingDeltaV {
+            get { return Hoverslam ("DeltaV"); }
+        }
+
+        /// <summary>
+        /// Terrain slope at the predicted landing site, in degrees. NaN when there is no
+        /// solution. Stock kRPC 0.6 cannot give you this.
+        /// </summary>
+        [KRPCProperty]
+        public static double LandingSlope {
+            get { return Hoverslam ("Slope"); }
+        }
+
+        static double Hoverslam (string member)
+        {
+            object module;
+            try {
+                module = MechJebModules.Get ("Hoverslam");
+            } catch (Exception) {
+                return double.NaN;
+            }
+            try {
+                return MechJebMembers.ReadNumber (MechJebMembers.Find (module, member, "Hoverslam"), module);
+            } catch (Exception) {
+                return double.NaN;
+            }
+        }
+
+        // ==================================================================
+        // The modules whose entry point is a method
+        // ==================================================================
+
+        /// <summary>
+        /// Start MechJeb's landing autopilot on the current target site.
+        ///
+        /// DELETES EVERY MANEUVER NODE on the vessel - MechJeb does that itself, on the
+        /// reasoning that a descent plan and a burn plan cannot both be right. Plan your
+        /// nodes after landing guidance, not before.
+        ///
+        /// It also competes with any descent guidance of your own. Only one thing can fly
+        /// the vessel.
+        /// </summary>
+        [KRPCProcedure]
+        public static void LandAtTarget ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Landing"), "LandAtPositionTarget", true);
+        }
+
+        /// <summary>Start the landing autopilot with no target: come down wherever the trajectory leads.</summary>
+        [KRPCProcedure]
+        public static void LandUntargeted ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Landing"), "LandUntargeted", true);
+        }
+
+        /// <summary>
+        /// Stop the landing autopilot. The correct way out - withdrawing from the user pool
+        /// leaves it enabled with a step still set.
+        /// </summary>
+        [KRPCProcedure]
+        public static void StopLanding ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Landing"), "StopLanding", false);
+        }
+
+        /// <summary>Execute the next maneuver node, warping to it if MechJeb is set to.</summary>
+        [KRPCProcedure]
+        public static void ExecuteNode ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Node"), "ExecuteOneNode", true);
+        }
+
+        /// <summary>Execute every maneuver node in turn.</summary>
+        [KRPCProcedure]
+        public static void ExecuteAllNodes ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Node"), "ExecuteAllNodes", true);
+        }
+
+        /// <summary>Stop executing nodes.</summary>
+        [KRPCProcedure]
+        public static void AbortNode ()
+        {
+            MechJebModules.Call (MechJebModules.Get ("Node"), "Abort", false);
+        }
+
+        /// <summary>
+        /// Push SmartASS's current mode and target to the attitude controller.
+        ///
+        /// Setting SmartASS's members does nothing on its own - the panel only acts when
+        /// its Engage is called, which is what its buttons do. And note that with
+        /// autoDisableSmartASS on, which is the default, SmartASS stands down whenever
+        /// another autopilot takes the attitude controller: expect your setting to be
+        /// reverted while an ascent or a landing is flying.
+        /// </summary>
+        [KRPCProcedure]
+        public static void SmartAssEngage ()
+        {
+            var module = MechJebModules.Get ("SmartASS");
+            try {
+                MechJebModules.Call (module, "Engage", false);
+            } catch (InvalidOperationException) {
+                MechJebModules.Call (module, "Engage", true);
+            }
+        }
+
+        // ==================================================================
+        // The maneuver planner
+        // ==================================================================
+
+        /// <summary>
+        /// The maneuver operations this MechJeb offers, by CLASS name - for example
+        /// "OperationCircularize", "OperationApoapsis", "OperationGeneric" for a Hohmann
+        /// transfer.
+        ///
+        /// Class names rather than the labels MechJeb shows, because the labels are
+        /// translated: a script keyed on "circularize" breaks on a French install.
+        /// <see cref="ManeuverOperationName"/> gives the label if you need to show one.
+        /// </summary>
+        [KRPCProperty]
+        public static IList<string> ManeuverOperations {
+            get { return MechJebManeuvers.Names (); }
+        }
+
+        /// <summary>The label MechJeb shows for an operation, in the game's language. Display only.</summary>
+        [KRPCProcedure]
+        public static string ManeuverOperationName (string operation)
+        {
+            return MechJebManeuvers.DisplayName (MechJebManeuvers.Get (operation));
+        }
+
+        /// <summary>
+        /// An operation's parameters, in the same format as <see cref="DescribeModule"/>.
+        /// The burn-time parameters "LeadTime" and "CircularizeAltitude" are also settable
+        /// through the same accessors even though they belong to the time selector.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> DescribeManeuver (string operation)
+        {
+            var op = MechJebManeuvers.Get (operation);
+            var rows = new List<string> (MechJebMembers.Describe (op));
+            var selector = MechJebManeuvers.SelectorOf (op);
+            if (selector != null)
+                foreach (var row in MechJebMembers.Describe (selector))
+                    rows.Add (row);
+            rows.Sort (StringComparer.Ordinal);
+            return rows;
+        }
+
+        /// <summary>Read a numeric parameter of a maneuver operation.</summary>
+        [KRPCProcedure]
+        public static double ManeuverParameter (string operation, string name)
+        {
+            object target;
+            var member = FindManeuverMember (operation, name, out target);
+            return MechJebMembers.ReadNumber (member, target);
+        }
+
+        /// <summary>
+        /// Write a numeric parameter of a maneuver operation. SI units, so a 200 km
+        /// apoapsis is 200000.
+        /// </summary>
+        [KRPCProcedure]
+        public static void SetManeuverParameter (string operation, string name, double value)
+        {
+            object target;
+            var member = FindManeuverMember (operation, name, out target);
+            MechJebMembers.WriteNumber (member, target, value);
+        }
+
+        /// <summary>Read a boolean parameter of a maneuver operation.</summary>
+        [KRPCProcedure]
+        public static bool ManeuverFlag (string operation, string name)
+        {
+            object target;
+            var member = FindManeuverMember (operation, name, out target);
+            return MechJebMembers.ReadFlag (member, target);
+        }
+
+        /// <summary>Write a boolean parameter of a maneuver operation.</summary>
+        [KRPCProcedure]
+        public static void SetManeuverFlag (string operation, string name, bool value)
+        {
+            object target;
+            var member = FindManeuverMember (operation, name, out target);
+            MechJebMembers.WriteFlag (member, target, value);
+        }
+
+        /// <summary>
+        /// The burn times this operation accepts, as enum names - "APOAPSIS",
+        /// "CLOSEST_APPROACH", "X_FROM_NOW" and so on.
+        ///
+        /// Empty means the operation works its own timing out and there is nothing to
+        /// choose. There is no absolute-UT reference: for a specific time, select
+        /// "X_FROM_NOW" and set "LeadTime" to the number of seconds from now.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> ManeuverTimeReferences (string operation)
+        {
+            return MechJebManeuvers.TimeReferences (MechJebManeuvers.Get (operation));
+        }
+
+        /// <summary>
+        /// Choose when the burn happens. Rejected, with the list it does accept, if the
+        /// operation does not allow that reference.
+        ///
+        /// SHARED WITH MECHJEB'S OWN WINDOW. The time selector is one object per operation
+        /// TYPE, not per instance, so this also changes what the player sees in the
+        /// Maneuver Planner - and a player changing it there changes what your script gets.
+        /// That is MechJeb's design, not a choice made here.
+        /// </summary>
+        [KRPCProcedure]
+        public static void SetManeuverTimeReference (string operation, string reference)
+        {
+            MechJebManeuvers.SetTimeReference (MechJebManeuvers.Get (operation), reference);
+        }
+
+        /// <summary>
+        /// Run the operation and put its maneuver nodes in the game. Returns how many it
+        /// placed - usually one, two for a Hohmann transfer with a capture burn.
+        ///
+        /// THE NODES ARE ORDINARY KSP NODES. Read them back with stock kRPC's
+        /// `vessel.control.nodes`, which gives you prograde, normal, radial and UT, and
+        /// execute or delete them with tools you already have. Nothing about MechJeb's
+        /// vector maths crosses this boundary.
+        ///
+        /// Throws with MechJeb's own explanation when the burn is impossible - no target,
+        /// target in a different sphere of influence, no ascending node with it, an
+        /// apoapsis below the surface. An operation can also succeed WITH a caveat, which
+        /// is left in <see cref="ManeuverWarning"/> rather than raised.
+        /// </summary>
+        /// <param name="operation">A name from <see cref="ManeuverOperations"/>.</param>
+        /// <param name="append">
+        /// When true and nodes already exist, plan from the end of the last one rather than
+        /// from now - so "circularize" after "change apoapsis" circularises at the new
+        /// apoapsis, which is what MechJeb's own window does. False plans from the present.
+        /// </param>
+        [KRPCProcedure]
+        public static int CreateManeuverNodes (string operation, bool append = true)
+        {
+            return MechJebManeuvers.CreateNodes (operation, append);
+        }
+
+        /// <summary>
+        /// The caveat from the last <see cref="CreateManeuverNodes"/>, or empty.
+        ///
+        /// Three operations plan a perfectly good burn and still have something to say -
+        /// a semi-major axis large enough to go hyperbolic, an inclination too shallow for
+        /// an accurate node shift, an approach not close enough to fine-tune. Raising those
+        /// would reject good plans; discarding them would hide a real warning.
+        /// </summary>
+        [KRPCProperty]
+        public static string ManeuverWarning {
+            get { return MechJebManeuvers.LastWarning; }
+        }
+
+        /// <summary>
+        /// Resolve a maneuver parameter, looking at the operation first and then at its
+        /// burn-time selector, so LeadTime and CircularizeAltitude are reachable on the
+        /// same path as everything else instead of needing procedures of their own.
+        /// </summary>
+        static MemberInfo FindManeuverMember (string operation, string name, out object target)
+        {
+            var op = MechJebManeuvers.Get (operation);
+            target = op;
+            try {
+                return MechJebMembers.Find (op, name, operation);
+            } catch (ArgumentException) {
+                var selector = MechJebManeuvers.SelectorOf (op);
+                if (selector == null)
+                    throw;
+                target = selector;
+                return MechJebMembers.Find (selector, name, operation);
+            }
+        }
+
+        // ==================================================================
         // Plumbing
         // ==================================================================
 

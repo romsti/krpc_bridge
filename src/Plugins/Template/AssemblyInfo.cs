@@ -24,5 +24,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Template")]
 [assembly: AssemblyDescription ("Skeleton bridge plugin. Copy to start a new one.")]
-[assembly: AssemblyVersion ("1.0.0.0")]
-[assembly: AssemblyFileVersion ("1.0.0.0")]
+[assembly: AssemblyVersion ("1.1.0.0")]
+[assembly: AssemblyFileVersion ("1.1.0.0")]
