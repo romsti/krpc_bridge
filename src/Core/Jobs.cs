@@ -152,6 +152,20 @@ namespace KRPC.Bridge.Core
         /// <summary>
         /// The result. Throws while the job is still running, so Python gets a clear
         /// error instead of a silently empty array.
+        ///
+        /// ★ A List, NEVER the stored array. This returned `e.Result` directly until
+        /// 17/08, and both procedures that expose it - Bridge.GetJobResult and
+        /// Bridge.AwaitJob - would have hung: an array typed as IList declares a legal
+        /// signature, so build/scan accepts it, but the RESPONSE cannot be encoded and
+        /// none is ever sent. From Python that is indistinguishable from a dead server.
+        ///
+        /// Found on the Ident plugin, which hit it in flight, then traced here. Nobody had
+        /// met it because the Jobs API's only caller is the Template's StartExample, and
+        /// the Template is deliberately never built. The signature scan cannot catch this
+        /// class of bug: it validates the declared type, not the concrete one.
+        ///
+        /// The copy is also correct on its own terms - the caller must not be handed the
+        /// array a swept entry still references.
         /// </summary>
         public static IList<double> Result (long id)
         {
@@ -165,7 +179,7 @@ namespace KRPC.Bridge.Core
                     throw new InvalidOperationException ("job " + id + " is still " + e.State);
                 if (e.State == JobState.Failed)
                     throw new InvalidOperationException ("job " + id + " failed: " + e.Error);
-                return e.Result ?? new double[0];
+                return e.Result == null ? new List<double> () : new List<double> (e.Result);
             }
         }
 

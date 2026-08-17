@@ -76,25 +76,33 @@ namespace KRPC.Bridge.Template
         /// Per-part sample of the active vessel, flattened: for each part, four doubles
         /// (index, temperature, max_temperature, skin_temperature). Length is 4 * n.
         ///
-        /// Flat arrays of doubles rather than a list of objects, on purpose: no handles
+        /// A flat sequence of doubles rather than a list of objects, on purpose: no handles
         /// to release, no per-field round trip, and numpy reshapes it in one line.
+        ///
+        /// ★ RETURN A List, NEVER AN ARRAY. This method returned `new double[n]` until
+        /// 17/08 and would have hung: the DECLARED type is legal, so build/scan accepts it,
+        /// but the response cannot be encoded and no reply is ever sent - from Python it is
+        /// indistinguishable from a dead server. Measured on the Ident plugin, which hit it
+        /// in flight; this file was never built or deployed, so it had never been exercised.
+        /// The signature scan cannot catch this class of bug: it validates the declared
+        /// type, not the concrete one.
         /// </summary>
         [KRPCProcedure]
         public static IList<double> PartThermalSample ()
         {
             Require ();
+            var output = new List<double> ();
             var vessel = FlightGlobals.ActiveVessel;
             if (vessel == null)
-                return new double[0];
+                return output;
 
             var parts = vessel.parts;
-            var output = new double[parts.Count * 4];
             for (int i = 0; i < parts.Count; i++) {
                 var part = parts [i];
-                output [i * 4 + 0] = i;
-                output [i * 4 + 1] = part.temperature;
-                output [i * 4 + 2] = part.maxTemp;
-                output [i * 4 + 3] = part.skinTemperature;
+                output.Add (i);
+                output.Add (part.temperature);
+                output.Add (part.maxTemp);
+                output.Add (part.skinTemperature);
             }
             return output;
         }

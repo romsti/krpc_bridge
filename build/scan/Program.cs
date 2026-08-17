@@ -29,6 +29,12 @@
 //     reference to KRPC.Core and can stay a plain net8.0 console app while the assemblies
 //     it inspects are net472.
 //
+//   * It loads KRPC.SpaceCenter.dll as CONTEXT, not as a target. A plugin here may name a
+//     SpaceCenter class in a signature, and the scanner resolves a KRPCClass through the
+//     service it belongs to - so that service has to be loaded or the lookup throws. The
+//     game loads every DLL under GameData; a harness that loads fewer reports failures the
+//     game would not have. See the block that does it for why only that one.
+//
 // Usage:
 //     dotnet run --project build/scan -- <KSP root> <dll> [<dll> ...]
 //
@@ -104,6 +110,50 @@ namespace KRPC.Bridge.Scan
             } catch (Exception e) {
                 Console.Error.WriteLine ("could not load KRPC.Core.dll: " + e.Message);
                 return 2;
+            }
+
+            // ------------------------------------------------------------------
+            // CONTEXT ASSEMBLIES: kRPC's own services, loaded but not the subject.
+            //
+            // The scanner resolves a KRPCClass by the SERVICE it belongs to, looked up in
+            // the table it builds from the assemblies that are loaded. So a plugin whose
+            // procedure takes a SpaceCenter.Vessel or SpaceCenter.Part as a parameter -
+            // which is legal, and documented in kRPC's own "Extending kRPC" page - cannot
+            // be scanned unless KRPC.SpaceCenter.dll is loaded too.
+            //
+            // Without this the scan died on
+            //     scanner threw: The given key 'SpaceCenter' was not present in the dictionary
+            // which reads like a broken signature and is nothing of the kind: in game KSP
+            // loads every DLL under GameData, so SpaceCenter is always there. The harness
+            // was the only place it was missing, and a harness that is less complete than
+            // the game reports failures the game would not have.
+            //
+            // SpaceCenter only, deliberately. kRPC also ships optional service assemblies
+            // (InfernalRobotics, KerbalAlarmClock, RemoteTech, LiDAR, DockingCamera) whose
+            // target mods may be absent; loading those could fail inside the scanner on a
+            // type it cannot resolve, and turn a green build red for a reason that has
+            // nothing to do with this repo. Add one here only when a plugin here actually
+            // needs to name one of its classes.
+            // ------------------------------------------------------------------
+            var spaceCenter = Path.Combine (krpcDirectory, "KRPC.SpaceCenter.dll");
+            if (File.Exists (spaceCenter)) {
+                try {
+                    var loaded = AssemblyLoadContext.Default.LoadFromAssemblyPath (spaceCenter);
+                    Console.WriteLine ("context " + loaded.GetName ().Name + " " + loaded.GetName ().Version
+                                       + "   (kRPC's own; scanned so its classes can be named)");
+                } catch (Exception e) {
+                    Console.Error.WriteLine ("could not load KRPC.SpaceCenter.dll: " + e.Message);
+                    Console.Error.WriteLine (
+                        "  A plugin taking a SpaceCenter.Vessel or .Part parameter cannot be");
+                    Console.Error.WriteLine (
+                        "  validated without it. Everything else still scans.");
+                }
+            } else {
+                Console.Error.WriteLine ("note: KRPC.SpaceCenter.dll not found at '" + spaceCenter + "'.");
+                Console.Error.WriteLine (
+                    "  It ships with kRPC. A plugin whose signature names one of its classes");
+                Console.Error.WriteLine (
+                    "  will fail the scan with \"key 'SpaceCenter' was not present\".");
             }
 
             foreach (var target in targets) {
@@ -185,6 +235,9 @@ namespace KRPC.Bridge.Scan
             Console.Error.WriteLine ("disable the ENTIRE kRPC server, not just this plugin:");
             foreach (var error in errors)
                 Console.Error.WriteLine ("  " + error);
+            Console.Error.WriteLine ();
+            Console.Error.WriteLine ("Read the type names: the context assemblies above are kRPC's own, and an");
+            Console.Error.WriteLine ("error naming one of their types is not something this repo can fix.");
             return 1;
         }
 

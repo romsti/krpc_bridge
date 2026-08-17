@@ -456,21 +456,22 @@ namespace KRPC.Bridge.Fmrs
 
         /// <summary>
         /// KSP's persistent id for each dropped stage - FMRS id to persistent id, as a
-        /// decimal string.
+        /// decimal string. Survives scene reloads, and lines up with KSP.log and the .sfs.
         ///
-        /// The bridge between FMRS and kRPC. FMRS speaks in KSP Guids; a kRPC client
-        /// holds Vessel objects, and kRPC's Vessel exposes no Guid at all - so there is
-        /// otherwise no way to turn "the other stage in this batch" into something you
-        /// can fly. persistentId is the identity kRPC does expose, and it survives scene
-        /// reloads.
+        /// NOT a way to find the matching kRPC Vessel. kRPC's Vessel exposes no identifier
+        /// at all - no Id, no Uid, no PersistentId - so there is nothing on that side to
+        /// compare this against. To reach a dropped stage, pass its FMRS id to
+        /// JumpToVessel: the Guid is the handle. Two uses remain, and both are real:
+        /// presence, and correlation with the game's own records.
         ///
-        /// Matching on the NAME is not an alternative: two side boosters built from the
-        /// same craft file carry the same name, the same part count and the same mass.
-        /// Nothing but the id tells them apart.
+        /// Matching on the NAME is not an alternative either: two side boosters built from
+        /// the same craft file carry the same name, the same part count and the same mass.
+        /// To tell two loaded twins apart on the kRPC side, compare something physical -
+        /// their positions differ by kilometres.
         ///
-        /// A stage KSP no longer has loaded is simply absent from the result rather than
-        /// reported as zero - an absent entry means "ask again", a zero would look like
-        /// an answer.
+        /// A stage KSP no longer has at all is simply absent from the result rather than
+        /// reported as zero - absent means destroyed or recovered, NOT out of physics
+        /// range, so retrying will not help. A zero would look like an answer.
         /// </summary>
         [KRPCProperty]
         public static IDictionary<string, string> DroppedPersistentIds {

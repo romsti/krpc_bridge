@@ -28,6 +28,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.Ocisly", "src\P
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.MechJeb", "src\Plugins\MechJeb\KRPC.Bridge.MechJeb.csproj", "{B1000000-0000-4000-9000-000000000014}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KRPC.Bridge.Ident", "src\Plugins\Ident\KRPC.Bridge.Ident.csproj", "{B1000000-0000-4000-9000-000000000015}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,11 +52,16 @@ Global
 		{B1000000-0000-4000-9000-000000000014}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B1000000-0000-4000-9000-000000000014}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B1000000-0000-4000-9000-000000000014}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000015}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000015}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1000000-0000-4000-9000-000000000015}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1000000-0000-4000-9000-000000000015}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{B1000000-0000-4000-9000-000000000011} = {B1000000-0000-4000-9000-000000000001}
 		{B1000000-0000-4000-9000-000000000012} = {B1000000-0000-4000-9000-000000000001}
 		{B1000000-0000-4000-9000-000000000014} = {B1000000-0000-4000-9000-000000000001}
+		{B1000000-0000-4000-9000-000000000015} = {B1000000-0000-4000-9000-000000000001}
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

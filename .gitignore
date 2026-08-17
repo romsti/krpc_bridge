@@ -19,6 +19,9 @@ __pycache__/
 .venv/
 venv/
 
+# Snapshots written by python/probe_ident.py. One flight's measurement, not a fixture.
+python/probe_ident.json
+
 # Editors
 .vs/
 .vscode/

@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    conn.ident - the KSP identifiers kRPC holds but does not publish.
+
+    THIS IS THE ONE PLUGIN WITH A HARD REFERENCE TO ANOTHER kRPC SERVICE, and that needs
+    saying out loud because docs\ARCHITECTURE.md forbids the pattern in general:
+
+        "Never add a hard <Reference> to the mod you are wrapping. Resolve it out of
+         AssemblyLoader.loadedAssemblies. A hard reference means your plugin fails to load
+         entirely when the mod is absent, and takes its kRPC service down with it."
+
+    That rule guards against a THIRD-PARTY mod being absent. KRPC.SpaceCenter is not a
+    third-party mod: it is kRPC's own core service, shipped in the same GameData\kRPC
+    folder as KRPC.dll, which every other plugin here already hard-references. If it is
+    absent, kRPC itself is absent and no plugin in this repo loads anyway.
+
+    And it cannot be avoided. The whole point of this plugin is to accept a
+    SpaceCenter.Part or SpaceCenter.Vessel as a parameter, which requires the type at
+    compile time. Reflection can read a member; it cannot appear in a signature.
+
+    THE BLAST RADIUS IS CONTAINED BY BEING A SEPARATE ASSEMBLY. If this one fails to
+    load, KSP skips it, logs it, and conn.fmrs / conn.ocisly / conn.mech_jeb are
+    untouched. That is the same guarantee every other plugin here gets, and it is the
+    reason this is not folded into an existing one.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Ident</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Ident</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!--
+    KRPCPath comes from Directory.Build.props, which is imported BEFORE this body, so the
+    property is already set here. The shared reference list lives in
+    Directory.Build.targets instead, and this reference is deliberately NOT added there:
+    every other project would inherit a coupling only this one needs.
+
+    Private=False for the same reason as all the others - the DLL already lives in the
+    player's GameData\kRPC, and shipping a second copy inside GameData\KRPC.Bridge is the
+    classic way to break an install.
+
+    Skipped when BridgeUseStubs is true so `dotnet build build/verify/Verify.csproj` still
+    needs no KSP install. Verify globs the SOURCES rather than building this project, so
+    it compiles this plugin against build\stubs\Stubs.cs, which carries the two stub types
+    (KRPC.SpaceCenter.Services.Vessel and .Parts.Part).
+  -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(KRPCPath)\KRPC.SpaceCenter.dll">
+      <Name>KRPC.SpaceCenter</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Fail with a readable message instead of a wall of CS0246, exactly as
+       ValidateKSPPaths does for the shared references. -->
+  <Target Name="ValidateSpaceCenterPath" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(BridgeUseStubs)'!='true'">
+    <Error Condition="!Exists('$(KRPCPath)\KRPC.SpaceCenter.dll')"
+           Text="KRPC.SpaceCenter.dll not found under '$(KRPCPath)'. It ships with kRPC; if KRPC.dll is there and this is not, the install is partial. Run: dir &quot;$(KRPCPath)\*.dll&quot;" />
+  </Target>
+
+</Project>

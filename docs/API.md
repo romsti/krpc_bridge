@@ -328,10 +328,15 @@ they were dropped together — a launcher that sheds side boosters and then a co
 sets listed simultaneously. Grouping on when a poll first noticed an id is a guess about
 timing; grouping on this is what FMRS actually recorded.
 
-**Why `dropped_persistent_ids` matters.** FMRS speaks in KSP `Guid`s, kRPC's `Vessel`
-exposes no Guid at all, and matching on the name does not work — two side boosters from the
-same craft file have the same name, part count and mass. `persistentId` is the only
-identity both sides can see, and it survives a scene reload.
+**What `dropped_persistent_ids` is, and is not.** It is KSP's real `persistentId` for each
+dropped stage, which survives a scene reload and lines up with `KSP.log` and the `.sfs`.
+
+It is **not** a way to find the matching kRPC `Vessel`. `SpaceCenter.Vessel` exposes no
+identifier at all — no `id`, no `uid`, no `persistent_id` — so there is nothing on that side
+to compare it against. Reach a dropped stage by passing its FMRS id to `jump_to_vessel`
+instead; the Guid *is* the handle. Its real uses are presence (an absent entry means KSP no
+longer has that vessel at all — destroyed or recovered — not that it is out of physics
+range) and correlation with the game's own records.
 
 ### Jumping
 

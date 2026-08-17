@@ -258,25 +258,39 @@ FMRS_save_2            t=  187611.8  ['Falcon Core']
 ```
 
 Note the two identical names. They are two different vessels built from the same craft
-file, with the same part count and the same mass — nothing but the id tells them apart,
-which is why `dropped_persistent_ids` exists:
+file, with the same part count and the same mass — nothing but the id tells them apart.
+
+**Do not try to look the vessel up on the kRPC side.** `SpaceCenter.Vessel` exposes **no
+identifier at all** — no `id`, no `uid`, no `persistent_id`. Earlier versions of this page
+showed `{v.persistent_id: v for v in conn.space_center.vessels}`; that attribute does not
+exist, and the code raises. (It also cost one reader a 420-second flight to find out.)
+
+What works is to stay on the FMRS side, because every jump procedure takes the FMRS id
+directly:
 
 ```python
-pids = conn.fmrs.dropped_persistent_ids      # FMRS id -> KSP persistentId
-by_pid = {v.persistent_id: v for v in conn.space_center.vessels}
-
 for vessel_id in batches["FMRS_save_3"]:
-    pid = pids.get(vessel_id)
-    if pid is None:
-        continue                  # KSP no longer has this vessel at all -
-                                  # destroyed or recovered. Retrying will not help.
-    vessel = by_pid.get(int(pid))
-    print(vessel.name, vessel.mass)
+    state = conn.fmrs.vessel_state(vessel_id)         # FLY / LANDED / DESTROYED / …
+    print(vessel_id, dropped[vessel_id], state)
+
+conn.fmrs.jump_to_vessel(batches["FMRS_save_3"][0])   # the Guid is the handle
+booster = conn.space_center.active_vessel             # now you have a kRPC Vessel
 ```
 
-FMRS speaks in KSP `Guid`s and kRPC's `Vessel` exposes no Guid at all, so `persistentId` is
-the only identity both sides can see. An unloaded stage is absent from that dictionary
-rather than reported as zero — absent means "ask again", zero would look like an answer.
+So what is `dropped_persistent_ids` for? Two things, and matching a kRPC `Vessel` is not
+one of them:
+
+- **Presence.** An entry is absent when KSP no longer has that vessel in `FlightGlobals` at
+  all — destroyed or recovered — not when it is merely out of physics range. Absent means
+  "gone", not "ask again".
+- **Correlation outside kRPC.** The value is KSP's real `persistentId`, so it lines up with
+  `KSP.log`, with a `.sfs` save file, and with anything else that reads the game's own
+  records.
+
+If you need to tell two *loaded* twins apart from the kRPC side — which is a different
+problem — use something physical you can read on both: their positions differ by kilometres.
+The only truly stable KSP identity for that is `Part.flightID`, which kRPC does not expose
+either; a plugin can (`Part` is a legal `[KRPCProcedure]` parameter).
 
 ---
 

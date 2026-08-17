@@ -132,7 +132,7 @@ def main() -> int:
                     print(f"      save '{save}'{stamp}  -> {len(members)} stage(s)  [{tag}]")
                     for vid in sorted(members):
                         pid = pids.get(vid)
-                        pid_text = f"persistent_id={pid}" if pid else "NOT LOADED (no persistent_id)"
+                        pid_text = f"persistent_id={pid}" if pid else "GONE (destroyed or recovered)"
                         aboard = [k for k, v in kerbals.items() if v == vid]
                         state = _safe(lambda: conn.fmrs.vessel_state(vid), "?")
                         print(f"          {vid}  {dropped[vid]}  [{state}]")
@@ -143,7 +143,8 @@ def main() -> int:
                 unresolved = [v for v in dropped if v not in pids]
                 if unresolved:
                     print(f"      {len(unresolved)} stage(s) have no persistent_id - "
-                          "KSP does not have them in FlightGlobals right now.")
+                          "KSP no longer has them in FlightGlobals at all (destroyed or "
+                          "recovered), so retrying will not help.")
 
             ledger = _safe(lambda: conn.fmrs.recovery_report(), [])
             if ledger:

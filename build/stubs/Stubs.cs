@@ -347,6 +347,39 @@ namespace KRPC.Service.Messages
     public class Event : IMessage { }
 }
 
+// ------------------------------------------------- kRPC SpaceCenter (KRPC.SpaceCenter.dll)
+//
+// Only the two classes the Ident plugin accepts as parameters, and only the members it
+// reads. Everything here mirrors the real kRPC 0.6 source:
+//
+//   Services\Vessel.cs        public Guid Id { get; private set; }
+//                             public global::Vessel InternalVessel { get; }
+//   Services\Parts\Part.cs    public global::Part InternalPart { get; }
+//
+// Note what is NOT here and cannot be: neither class carries a [KRPCProperty] identifier.
+// Id is a plain public C# property, which is exactly why a plugin can read it and a client
+// cannot. If that ever changes upstream, conn.ident becomes redundant - a good outcome.
+//
+// The KRPCClass attribute is deliberately omitted: verify only needs these to type-check,
+// and the real signature validation is build/scan against the real DLLs.
+
+namespace KRPC.SpaceCenter.Services
+{
+    public class Vessel
+    {
+        public Guid Id { get { return Guid.Empty; } }
+        public global::Vessel InternalVessel { get { return null; } }
+    }
+}
+
+namespace KRPC.SpaceCenter.Services.Parts
+{
+    public class Part
+    {
+        public global::Part InternalPart { get { return null; } }
+    }
+}
+
 namespace KRPC.Service.Attributes
 {
     [AttributeUsage (AttributeTargets.Class)]
