@@ -187,6 +187,88 @@ def run(conn, do_jump):
                 conn.mech_jeb.autostage = was
         check("autostage=False empties the staging pool", autostage_releases_pool)
 
+        # --- 1.1.0: the whole of MechJeb, reached by name.
+        #
+        # These matter more than they look. Everything below is new reflection against a
+        # mod that renames things, and the failure mode is not an exception - it is an
+        # empty list, or a member that reads back a plausible zero. So each check asserts
+        # something a broken resolve could not fake.
+
+        def modules_resolve():
+            names = conn.mech_jeb.modules
+            if not names:
+                return False, ("no module resolved - ComputerModule was not identified, so "
+                               "every by-name accessor is dead")
+            # Ascent and Staging have been on MechJebCore across every refactor so far.
+            missing = [n for n in ("Ascent", "Staging") if n not in names]
+            if missing:
+                return False, f"expected {missing} among {len(names)} modules: {names}"
+            return True, f"{len(names)} modules: {', '.join(names)}"
+        modules_ok = check("MechJebCore's modules resolve by name", modules_resolve)
+
+        def describe_is_populated():
+            rows = conn.mech_jeb.describe_module("Staging")
+            if not rows:
+                return False, "describe_module('Staging') is empty - member walk found nothing"
+            channels = {r.split("\t")[1] for r in rows if "\t" in r}
+            unsupported = [r.split("\t")[0] for r in rows if "\tunsupported\t" in r]
+            return "number" in channels and "flag" in channels, (
+                f"{len(rows)} members, channels {sorted(channels)}"
+                + (f"\nunsupported: {unsupported}" if unsupported else ""))
+        check("describe_module classifies members", describe_is_populated,
+              needs=(modules_ok, "needs the module walk"))
+
+        def staging_knobs_round_trip():
+            """The knobs 1.0.0 could not reach at all. Restores what it changed."""
+            was = conn.mech_jeb.setting("Staging", "AutostageLimit")
+            try:
+                conn.mech_jeb.set_setting("Staging", "AutostageLimit", 3)
+                got = conn.mech_jeb.setting("Staging", "AutostageLimit")
+                return abs(got - 3) < 1e-6, f"AutostageLimit {was} -> set 3 -> read {got}"
+            finally:
+                conn.mech_jeb.set_setting("Staging", "AutostageLimit", was)
+        check("a setting on a module other than Ascent round-trips", staging_knobs_round_trip,
+              needs=(modules_ok, "needs the module walk"))
+
+        def enum_channel_works():
+            options = conn.mech_jeb.enum_options("Thrust", "Tmode")
+            if not options:
+                return None, "this MechJeb exposes no Tmode enum on Thrust"
+            current = conn.mech_jeb.enum_value("Thrust", "Tmode")
+            return current in options, f"Tmode = {current}, of {options}"
+        check("enum settings read back as names", enum_channel_works,
+              needs=(modules_ok, "needs the module walk"))
+
+        def backing_fields_hidden():
+            """_autostage next to Autostage: writing the field skips the pool registration."""
+            names = conn.mech_jeb.ascent_flag_names
+            leaked = [n for n in names if n.startswith("_")]
+            return not leaked, ("these backing fields are still advertised and would "
+                                f"silently do nothing: {leaked}" if leaked
+                                else f"{len(names)} flags, none of them a backing field")
+        check("MechJeb's public backing fields stay out of the name lists", backing_fields_hidden)
+
+        def predictor_is_readable():
+            if not conn.mech_jeb.landing_predicted:
+                return None, ("no suicide-burn solution right now - the predictor only "
+                              "solves on a descent towards a surface")
+            lat = conn.mech_jeb.landing_latitude
+            lon = conn.mech_jeb.landing_longitude
+            return -90 <= lat <= 90 and -180 <= lon <= 360, (
+                f"impact {lat:.4f}, {lon:.4f} | ignition in "
+                f"{conn.mech_jeb.ignition_countdown:.1f}s | slope {conn.mech_jeb.landing_slope:.1f}deg")
+        check("the landing predictor gives a sane impact point", predictor_is_readable)
+
+        def planner_catalogue():
+            ops = conn.mech_jeb.maneuver_operations
+            if not ops:
+                return False, ("no maneuver operation resolved - Operation or "
+                               "GetAvailableOperations did not bind")
+            refs = conn.mech_jeb.maneuver_time_references("OperationCircularize")
+            return "OperationCircularize" in ops, (
+                f"{len(ops)} operations; circularize accepts {refs}")
+        check("the maneuver planner enumerates its operations", planner_catalogue)
+
     # ------------------------------------------------------------- the jump
     print("\n=== FMRS jump ===")
     if not do_jump:

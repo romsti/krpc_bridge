@@ -19,6 +19,8 @@ connection you already have, and `help(conn.fmrs)` in a REPL gives you the refer
 - [Replaying a landing](#replaying-a-landing)
 - [Reading what a recovery earned](#reading-what-a-recovery-earned)
 - [Ascent with MechJeb and manual staging](#ascent-with-mechjeb-and-manual-staging)
+- [Driving the rest of MechJeb](#driving-the-rest-of-mechjeb)
+- [Planning a burn](#planning-a-burn)
 - [Cameras](#cameras)
 - [Writing your own plugin](#writing-your-own-plugin)
 - [When it does not work](#when-it-does-not-work)
@@ -409,6 +411,150 @@ solves is specific to *liquid* side boosters sharing a stage with the core.
 If the player also clicked Engage in MechJeb's window, their request stands and the
 autopilot keeps flying. `mj.disengage_ascent()` clears the pool outright — use that on a
 cleanup path, where leaving an autopilot engaged would carry into the next flight.
+
+---
+
+## Driving the rest of MechJeb
+
+The ascent members above are the ones with names of their own. Everything else in MechJeb —
+twenty other modules, roughly two hundred settings — goes through five accessors instead,
+and the first thing to call is the one that tells you what is there.
+
+```python
+mj = conn.mech_jeb
+print(mj.modules)
+# ['Ascent', 'AscentSettings', 'Attitude', 'Glueball', 'Guidance', 'Hoverslam',
+#  'Landing', 'Node', 'RCS', 'Rcsbal', 'Rover', 'Settings', 'SmartASS', 'Solarpanel',
+#  'Spinup', 'StageStats', 'Staging', 'Target', 'Thrust', 'Warp', 'AntennaControl']
+
+for row in mj.describe_module("Staging"):
+    print(row)
+# AutostageLimit             number  EditableInt          rw  persistent:GLOBAL
+# AutostagePostDelay         number  EditableDouble       rw  persistent:GLOBAL
+# DropSolids                 flag    Boolean              rw  persistent:GLOBAL
+# FairingMinAltitude         number  EditableDoubleMult   rw  persistent:GLOBAL
+# HotStaging                 flag    Boolean              rw  persistent:GLOBAL
+```
+
+**The second column tells you which accessor to use** — `number` → `setting()`, `flag` →
+`flag()`, `enum` → `enum_value()`, `list` → `list_value()`, `text` → read-only. A module
+this MechJeb does not publish under a short name is still reachable by its class name:
+`mj.describe_module("MechJebModuleRendezvousAutopilot")`.
+
+**The last column is the one to read twice.** `persistent:GLOBAL` means the setting is saved
+for **every vessel in every save on that install**. A script that tunes an ascent parameter
+for one launcher has changed the default for all of them. The bridge does not block it —
+that would make it useless for the main use case — but nothing tells the player either.
+
+Two things you could not do at all before:
+
+```python
+# Stage, but never past stage 3. The middle ground between autostage on and off.
+mj.set_setting("Staging", "AutostageLimit", 3)
+
+# Cap the ascent by dynamic pressure instead of by throttle guesswork.
+mj.set_flag("Thrust", "LimitDynamicPressure", True)
+mj.set_setting("Thrust", "MaxDynamicPressure", 20000)
+```
+
+**Engaging is not uniform and the differences are handled for you.** `mj.engage("Node")`
+adds you to a module's user pool; `mj.disengage("Node")` withdraws, and the module keeps
+running if MechJeb's own window still wants it — which is why both return the remaining
+user count rather than nothing. Modules that run themselves refuse to be disengaged, and
+settings bags say they are not autopilots. Three modules need a method rather than the
+pool: `land_at_target()`, `execute_node()`, `smart_ass_engage()`.
+
+**The landing predictor costs nothing to read.** It runs whenever you are in flight,
+republishing about once a second, so nothing has to be engaged:
+
+```python
+import math
+
+if mj.landing_predicted:
+    print(f"impact {mj.landing_latitude:.4f}, {mj.landing_longitude:.4f}")
+    print(f"ignite in {mj.ignition_countdown:.1f}s, {mj.landing_delta_v:.0f} m/s")
+    print(f"slope there: {mj.landing_slope:.1f} deg")
+```
+
+Every number is `NaN` when there is no solution, so test `landing_predicted` first rather
+than trusting a zero. Stock kRPC has no impact prediction of any kind, and this one
+propagates through the atmosphere — it is what a boostback burn exists to null out, and an
+independent check on a descent solver of your own.
+
+---
+
+## Planning a burn
+
+MechJeb can compute a Hohmann transfer, a plane match, an intercept, a moon return. The
+design decision that matters is what you get back: **an ordinary KSP maneuver node**.
+MechJeb computes and places it, and from there you are in stock kRPC.
+
+```python
+mj = conn.mech_jeb
+vessel = conn.space_center.active_vessel
+
+print(mj.maneuver_operations)
+# ['OperationApoapsis', 'OperationCircularize', 'OperationCourseCorrection',
+#  'OperationEccentricity', 'OperationGeneric', 'OperationInclination', ...]
+
+# Raise apoapsis to 200 km at the next periapsis, then circularise there.
+mj.set_maneuver_time_reference("OperationApoapsis", "PERIAPSIS")
+mj.set_maneuver_parameter("OperationApoapsis", "NewApA", 200000)   # SI: metres
+mj.create_maneuver_nodes("OperationApoapsis")
+
+mj.set_maneuver_time_reference("OperationCircularize", "APOAPSIS")
+mj.create_maneuver_nodes("OperationCircularize")   # append=True: plans from the last node
+
+for node in vessel.control.nodes:                  # stock kRPC from here on
+    print(f"t={node.ut:.0f}  {node.delta_v:.1f} m/s  prograde {node.prograde:.1f}")
+```
+
+**Operations are named by class, not by label.** MechJeb's labels are translated, so a
+script keyed on `"circularize"` breaks on a French install. `maneuver_operation_name()`
+gives the label if you need to display one.
+
+**`describe_maneuver()` lists the parameters**, in the same format as `describe_module()`,
+including the burn-time ones. And `maneuver_time_references()` says which burn times the
+operation accepts — an unaccepted one is rejected with the list rather than ignored.
+
+**There is no absolute-UT burn time.** For a specific moment, choose `"X_FROM_NOW"` and set
+`LeadTime` to the seconds from now:
+
+```python
+mj.set_maneuver_time_reference("OperationCircularize", "X_FROM_NOW")
+mj.set_maneuver_parameter("OperationCircularize", "LeadTime",
+                          target_ut - conn.space_center.ut)
+```
+
+**Set a target a tick before you use it.** MechJeb syncs the target on its own
+`FixedUpdate`, so a target set through stock kRPC is invisible to it in the same frame:
+
+```python
+conn.space_center.target_vessel = station
+conn.space_center.wait()                     # let one tick pass
+mj.set_maneuver_time_reference("OperationPlane", "REL_HIGHEST_AD")
+mj.create_maneuver_nodes("OperationPlane")
+```
+
+**Failures explain themselves, warnings do not interrupt.** No target, a target in another
+sphere of influence, an apoapsis below the surface — all raise with MechJeb's own message.
+But three operations plan a perfectly good burn and still have a caveat, so that goes to
+`maneuver_warning` instead of rejecting the plan:
+
+```python
+count = mj.create_maneuver_nodes("OperationSemiMajor")
+if mj.maneuver_warning:
+    print("MechJeb says:", mj.maneuver_warning)
+```
+
+**Two things are shared with MechJeb's own window.** The burn-time selection is one object
+per operation type, so setting it changes what the player sees in the Maneuver Planner —
+and vice versa. And parameters live on a single instance per operation, so two scripts
+planning the same operation share them.
+
+**Interplanetary transfers are not supported.** That operation's solver is built by
+MechJeb's GUI and returns "Started computation" forever when driven headlessly. It is the
+one thing here that has to be done another way.
 
 ---
 
