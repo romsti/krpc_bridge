@@ -48,7 +48,17 @@ def token_of(name):
 
 
 def loaded_vessels(conn):
-    """Every loaded vessel, with its flightID set. Unloaded ones are reported separately."""
+    """Every loaded vessel, with its flightID set. Unloaded ones are reported separately.
+
+    ★ EVERY VESSEL GETS A KEY THAT IS NOT ITS NAME, and that is the whole lesson of this
+    file. The first version grouped cameras by owner NAME - and on a two-booster flight the
+    twins are both called "<craft> Probe", so it merged them and reported "2 distinct
+    vessels" where there were three. It made exactly the mistake this probe exists to avoid,
+    in the line right after resolving the owner correctly.
+
+    persistentId from conn.ident is the key. It differs between twins, unlike the name, and
+    it is what makes the display honest.
+    """
     have_ident = hasattr(conn, "ident") and conn.ident.available
     loaded, unloaded = [], []
     for vessel in conn.space_center.vessels:
@@ -61,6 +71,7 @@ def loaded_vessels(conn):
                 "loaded": vessel.loaded,
                 "packed": vessel.packed,
                 "ids": set(),
+                "key": None,
             }
         except RuntimeError:
             # A vessel destroyed between the list call and this read. Not an error.
@@ -74,7 +85,29 @@ def loaded_vessels(conn):
             except RuntimeError as exc:
                 entry["ids"] = set()
                 entry["note"] = f"conn.ident refused: {exc}"
+            try:
+                entry["key"] = conn.ident.vessel_ids(vessel).split("\t")[0]
+            except RuntimeError:
+                entry["key"] = None
         loaded.append(entry)
+
+    # A label that tells twins apart on screen. Only the ambiguous ones get decorated, so a
+    # single-booster flight reads exactly as before.
+    counts = {}
+    for entry in loaded:
+        counts[entry["name"]] = counts.get(entry["name"], 0) + 1
+    seen = {}
+    for entry in loaded:
+        name = entry["name"]
+        if counts[name] > 1:
+            seen[name] = seen.get(name, 0) + 1
+            entry["label"] = f"{name}  #{seen[name]} ({len(entry['ids'])}p)"
+        else:
+            entry["label"] = name
+        # Fall back to the label when persistentId is unavailable, never to the bare name:
+        # the label at least carries the part count.
+        if entry["key"] is None:
+            entry["key"] = entry["label"]
     return loaded, unloaded, have_ident
 
 
@@ -130,11 +163,16 @@ def main():
 
     # ---- vessels -----------------------------------------------------------
     print(f"\nLoaded vessels ({len(loaded)})")
+    twins = [e for e in loaded if e["label"] != e["name"]]
     for entry in loaded:
-        print(f"  {entry['name']:<34} [{entry['situation']:<12}] "
+        print(f"  {entry['label']:<40} [{entry['situation']:<12}] "
               f"packed={str(entry['packed']):<5} {len(entry['ids']):>3} flightID(s)")
         if entry.get("note"):
             print(f"      {entry['note']}")
+    if twins:
+        print(f"  ** {len(twins)} vessels share a name. ** That is the twin-booster case, and")
+        print("     the only thing that separates them is the flightID set - not the name,")
+        print("     which is why the cameras below are grouped by persistentId.")
     if unloaded:
         print(f"\n  {len(unloaded)} vessel(s) NOT loaded - they have no camera at all:")
         for entry in unloaded[:8]:
@@ -154,33 +192,41 @@ def main():
     if not hullcams:
         print("  none. No loaded vessel carries a Hullcam part.")
 
+    # Grouped by persistentId, NEVER by name - see loaded_vessels().
     by_vessel = {}
     for name in hullcams:
         token = token_of(name)
         owner = owner_of(token, loaded)
-        key = owner["name"] if owner else "(unresolved)"
+        key = owner["key"] if owner else "(unresolved)"
         by_vessel.setdefault(key, []).append((name, token, owner))
         live = "STREAMING" if token in streaming_tokens else "idle"
         kept = "remembered" if token in remembered else ""
-        resolved = owner["name"] if owner else ("no owner found" if token else "NO TOKEN")
+        resolved = owner["label"] if owner else ("no owner found" if token else "NO TOKEN")
         print(f"  {name}")
-        print(f"      token {token or '-':<14} -> {resolved:<30} {live} {kept}")
+        print(f"      token {token or '-':<14} -> {resolved:<36} {live} {kept}")
 
     # ---- the verdict -------------------------------------------------------
     print("\nVerdict")
     distinct = [k for k in by_vessel if k != "(unresolved)"]
-    print(f"  cameras            {len(hullcams)}")
-    print(f"  on distinct vessels {len(distinct)}   {', '.join(distinct) if distinct else '-'}")
-    print(f"  streaming now      {len(streaming)}")
+    labels = {}
+    for entry in loaded:
+        labels[entry["key"]] = entry["label"]
+    print(f"  cameras             {len(hullcams)}")
+    print(f"  on distinct vessels {len(distinct)}")
+    for key in distinct:
+        cams = [t for _, t, _ in by_vessel[key] if t]
+        print(f"      {labels.get(key, key):<40} {len(cams)} camera(s)")
+    print(f"  streaming now       {len(streaming)}")
 
     if len(hullcams) >= 2 and len(distinct) >= 2:
-        print("\n  ** TWO CAMERAS ON TWO DIFFERENT VESSELS, BOTH RESOLVED. **")
-        print("  Both can stream at once, and each is attributable to its booster by token.")
+        print("\n  ** CAMERAS ON MORE THAN ONE VESSEL, ALL RESOLVED BY TOKEN. **")
+        print("  They can stream at once, and each is attributable to its own booster -")
+        print("  including twins that share a name, which is the case the token exists for.")
         print("  Pin them in the overlay's proxy so the OBS assignment survives a restart:")
         for key in distinct:
             for _, token, _ in by_vessel[key]:
                 if token:
-                    print(f"      --alias {token}=<name you want>   # {key}")
+                    print(f"      --alias {token}=<name you want>   # {labels.get(key, key)}")
     elif len(hullcams) >= 2 and len(distinct) < 2:
         print("\n  Two cameras, but they resolve to fewer than two vessels. Either they are")
         print("  on the same craft, or a token did not resolve - check the lines above.")

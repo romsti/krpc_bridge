@@ -99,7 +99,23 @@ def report(snap, earlier):
     for old in earlier:
         theirs = set(old["flight_ids"])
         both = mine & theirs
-        verdict = "STABLE" if both else "!! NO OVERLAP"
+        smaller = min(len(mine), len(theirs))
+
+        # Three outcomes, and the first version of this script called two of them the same
+        # thing. Zero overlap between two POST-separation snapshots is the CORRECT answer:
+        # they are disjoint pieces of one stack, and a shared part would be the anomaly. It
+        # only means the invariant failed when one side is the pre-launch reference, which
+        # contains every part there will ever be.
+        reference = old["label"] == "prelaunch" or snap["label"] == "prelaunch"
+        if both and len(both) == smaller:
+            verdict = "SUBSET - same lineage, flightID held"
+        elif both:
+            verdict = f"PARTIAL - {len(both)}/{smaller} of the smaller set, look at this"
+        elif reference:
+            verdict = "!! NO OVERLAP with the pre-launch set - the invariant FAILED"
+        else:
+            verdict = "disjoint - expected between two different sub-vessels"
+
         print(f"  vs {old['label']:<12} {len(both):>3} shared / "
               f"{len(theirs)} then / {len(mine)} now   {verdict}")
         if both:
