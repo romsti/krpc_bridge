@@ -16,6 +16,8 @@ launching the game.
 - [`conn.ocisly`](#connocisly) — camera streams across a scene reload
 - [`conn.mech_jeb`](#connmech_jeb) — ascent, staging, every module by name, the landing
   predictor and the maneuver planner
+- [`conn.trajectories`](#conntrajectories) — Trajectories' impact prediction, landing
+  target and descent profile
 
 ---
 
@@ -710,3 +712,93 @@ for node in vessel.control.nodes:             # ordinary kRPC nodes from here on
 if mj.maneuver_warning:
     print("MechJeb says:", mj.maneuver_warning)
 ```
+
+---
+
+## `conn.trajectories`
+
+Trajectories predicts where the active vessel hits the ground by integrating its descent
+through the stock aerodynamics — the drag cubes, at the vessel's *actual* attitude or at
+the descent profile you set. Stock kRPC has no impact prediction of any kind, and MechJeb's
+landing predictor only runs while its landing module is engaged; this one runs whenever you
+are in flight. It is a **witness, not an autopilot**: the prediction ignores thrust and
+answers "where do I land if I cut the engines now".
+
+**The first five members are frozen.** `available()`, `has_impact()`, `get_impact_geo()`,
+`get_impact_position()` and `get_time_till_impact()` keep the names, shapes and failure
+behaviour of the previous single-DLL bridge, because existing clients pin them. Note that
+`available()` is a *procedure* here — call it with parentheses — where every other
+service has a property of that name.
+
+| Member | Type | Notes |
+|---|---|---|
+| `available()` | `bool` | Mod installed and its API resolved. A procedure, not a property. |
+| `diagnostics` | `str` | What resolution found, member by member. |
+| `ping()` | `str` | |
+| `mod_version` | `str` | The Trajectories assembly version, e.g. `"2.4.5.4"`; empty when absent. |
+| `api_version` | `str` | What the mod's own API says, e.g. `"2.4.5"`. Raises when absent. |
+| `has_impact()` | `bool` | A prediction exists for the active vessel. Never raises. |
+| `get_impact_geo()` | `list[float]` | `[lat_deg, lon_deg, terrain_alt_m]` on the active vessel's main body. **Raises** `RuntimeError` when there is no impact — guard with `has_impact()`. |
+| `get_impact_position()` | `list[float]` | The mod's raw vector `[x, y, z]` in metres: relative to the main body's centre, world axes, rotated to where that surface point is *now*. Add the body's position for a world position. **Raises** when there is no impact. |
+| `get_time_till_impact()` | `float` | Seconds to impact, or `-1` if none. Never raises. |
+| `get_end_time()` | `float` | Universal time of the impact, or `-1`. |
+| `get_impact_velocity()` | `list[float]` | `[x, y, z]` m/s, world axes. **Empty list** if no impact. |
+| `update_trajectory()` | — | Ask for a recompute now. Lands on a later tick; does not block. |
+| `always_update` | `bool` r/w | Integrate even with the mod's window closed. The bridge turns it on at every flight-scene start so a headless script gets a live prediction. |
+| `has_target()` | `bool` | A landing target is set. |
+| `set_target(lat, lon, alt)` | — | Degrees on the active vessel's main body; pass `float('nan')` as the altitude to put it on the ground there. |
+| `clear_target()` | — | |
+| `get_target()` | `list[float]` | `[lat_deg, lon_deg, alt_m]`, or an empty list. |
+| `get_planned_direction()` | `list[float]` | The navball marker the mod draws for "fly this way to the target", `[x, y, z]` world axes. Empty list without a target. |
+| `get_corrected_direction()` | `list[float]` | Its second marker: the correction to bring the predicted impact onto the target. Empty list without a target. |
+| `get_descent_profile_angles()` | `list[float]` | Four angles in **degrees**: entry, high altitude, low altitude, final approach. |
+| `get_descent_profile_modes()` | `list[bool]` | Per node: `True` = the angle is an angle of attack, `False` = measured from the horizon. |
+| `get_descent_profile_grades()` | `list[bool]` | Per node: `True` = retrograde. |
+| `set_descent_profile(angles, modes, grades)` | — | All three lists of four, same order. `ValueError` on any other length. Degrees in. |
+| `reset_descent_profile(aoa_deg)` | — | All four nodes to one angle of attack. `0` = prograde, `180` = tail first; anything beyond 90 in magnitude is retrograde. |
+| `retrograde_entry` | `bool` r/w | All four nodes retrograde. Writing `True` resets the profile to retrograde at 0° AoA. |
+| `prograde_entry` | `bool` r/w | All four nodes prograde. Writing `True` resets to prograde at 0° AoA. |
+
+**Two conventions for "nothing to report", on purpose.** The two frozen vector members
+raise, as they always have, so the guard is `has_impact()`. Every *new* vector member
+returns an empty list and the two time members return `-1`, so a control loop can poll
+them without exceptions. A member the installed Trajectories does not have raises
+`RuntimeError: Trajectories.API.<name> absent (v2.4.5.4)` — never a `NullReferenceException`
+— and `diagnostics` lists every such member at once.
+
+**Angles are degrees here, radians in the mod.** `Trajectories.API` takes and returns
+radians for `ResetDescentProfile` and `DescentProfileAngles`; this service converts, so
+`reset_descent_profile(180)` is tail first. The mod's GUI shows degrees too.
+
+**Set the descent profile before you need the number.** The mod integrates the attitude it
+is told about, and by default that is the vessel's current one. A booster still pointed
+for its boostback is predicted as if it would fall nose-first all the way down, which is
+the wrong drag by a wide margin. One line at boot fixes it:
+
+```python
+tr = conn.trajectories
+if tr.available():
+    tr.reset_descent_profile(180)         # tail first, zero AoA, all four nodes
+    # or, with a trim: tr.set_descent_profile([180, 180, 175, 170], [True]*4, [True]*4)
+
+# later, in the loop
+if tr.has_impact():
+    lat, lon, alt = tr.get_impact_geo()
+    t = tr.get_time_till_impact()
+```
+
+**It has a cadence of its own.** The mod recomputes on its timer, not on each read, so the
+prediction can be one or two seconds old while the vessel is sweeping its impact point at
+hundreds of metres per second. `update_trajectory()` asks for a fresh one but the answer
+still arrives on a later tick. Read `get_time_till_impact()` with the position and you
+can tell two consecutive reads of the same computation apart from two computations.
+
+**Frames.** `get_impact_geo()` is the member to use: latitude and longitude are what
+`body.surface_position(lat, lon, frame)` on stock kRPC turns into any frame you like.
+`get_impact_position()` is the mod's own vector — body-relative, world axes, already
+rotated to the current position of that surface point — kept for clients that were already
+doing that sum themselves.
+
+**Why some of `Trajectories.API` is not here.** `GetSpaceOrbit()` returns a stock `Orbit`
+that kRPC's own `vessel.orbit` already gives you; the three split version numbers are
+folded into `api_version`.

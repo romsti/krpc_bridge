@@ -66,6 +66,24 @@ namespace UnityEngine
         public static float time { get { return 0f; } }
         public static float fixedDeltaTime { get { return 0.02f; } }
     }
+
+    // The Trajectories plugin unboxes the mod's Vector3? results. Never crosses the kRPC
+    // wire: it is flattened to an IList of double first.
+    public struct Vector3
+    {
+        public float x, y, z;
+        public Vector3 (float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
+    }
+}
+
+// KSP's double-precision vector (global namespace). Only what the Trajectories plugin
+// uses to turn a body-relative impact into latitude and longitude.
+public struct Vector3d
+{
+    public double x, y, z;
+    public Vector3d (double x, double y, double z) { this.x = x; this.y = y; this.z = z; }
+    public static Vector3d zero { get { return new Vector3d (0, 0, 0); } }
+    public static Vector3d operator + (Vector3d a, Vector3d b) { return new Vector3d (a.x + b.x, a.y + b.y, a.z + b.z); }
 }
 
 // ------------------------------------------------- KSP (Assembly-CSharp, global namespace)
@@ -115,6 +133,7 @@ public class Vessel : UnityEngine.MonoBehaviour
     public double missionTime;
     public Orbit orbit;
     public PatchedConicSolver patchedConicSolver;
+    public CelestialBody mainBody { get { return null; } }
 }
 
 // The maneuver-node side of the stock API, used by the MechJeb plugin's maneuver planner.
@@ -159,6 +178,7 @@ public static class FlightGlobals
     public static bool ready { get { return false; } }
     public static List<Vessel> Vessels = new List<Vessel> ();
     public static List<Vessel> VesselsLoaded = new List<Vessel> ();
+    public static CelestialBody currentMainBody { get { return null; } }
 }
 
 public class EventVoid
@@ -279,6 +299,16 @@ public class ProtoVessel
 public class CelestialBody : UnityEngine.MonoBehaviour
 {
     public string bodyName;
+    // World position of the body's centre, and the geographic conversions the
+    // Trajectories plugin uses on a body-relative impact vector. Real signatures:
+    //   public Vector3d position;
+    //   public double GetLatitude (Vector3d worldPos)
+    //   public double GetLongitude (Vector3d worldPos)
+    //   public double TerrainAltitude (double latitude, double longitude, bool allowNegative = false)
+    public Vector3d position;
+    public double GetLatitude (Vector3d worldPos) { return 0.0; }
+    public double GetLongitude (Vector3d worldPos) { return 0.0; }
+    public double TerrainAltitude (double latitude, double longitude, bool allowNegative = false) { return 0.0; }
 }
 
 public class EventReport

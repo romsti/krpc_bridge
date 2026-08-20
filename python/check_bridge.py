@@ -65,7 +65,7 @@ def main() -> int:
     line("bridge.ping()", conn.bridge.ping())
     line("core version", conn.bridge.version)
     line("services", ", ".join(
-        s for s in ("bridge", "fmrs", "ocisly", "mech_jeb") if hasattr(conn, s)))
+        s for s in ("bridge", "fmrs", "ocisly", "mech_jeb", "trajectories") if hasattr(conn, s)))
     line("events recorded", conn.bridge.events_recorded)
 
     print("\nPlugins")
@@ -231,6 +231,37 @@ def main() -> int:
             print("      MechJeb not resolved. What the bridge found:")
             print(f"      {conn.mech_jeb.diagnostics}")
             print("      (send me this line - it names the exact member that moved)")
+
+    # 5. Trajectories. The service is Flight-only, so outside flight kRPC does not
+    # offer it at all and hasattr is False - that is normal, not a missing DLL.
+    print("\nTrajectories")
+    if not hasattr(conn, "trajectories"):
+        print("      service not offered in this scene (Flight only), or the DLL did not load")
+    else:
+        tr = conn.trajectories
+        line("trajectories.ping()", tr.ping())
+        # available() is a PROCEDURE on this service - parentheses - because the
+        # previous single-DLL bridge had it that way and existing clients call it so.
+        line("available()", tr.available())
+        if tr.available():
+            line("mod version", tr.mod_version)
+            for label, read in (("api version", lambda: tr.api_version),
+                                ("always update", lambda: tr.always_update),
+                                ("has impact", lambda: tr.has_impact()),
+                                ("time till impact", lambda: tr.get_time_till_impact()),
+                                ("has target", lambda: tr.has_target()),
+                                ("retrograde entry", lambda: tr.retrograde_entry),
+                                ("profile angles deg", lambda: tr.get_descent_profile_angles())):
+                try:
+                    line(label, read())
+                except RuntimeError as exc:
+                    line(label, f"unreadable: {exc}")
+            if _safe(lambda: tr.has_impact(), False):
+                lat, lon, alt = tr.get_impact_geo()
+                line("impact", f"lat {lat:.4f}  lon {lon:.4f}  alt {alt:.0f} m")
+        else:
+            print("      Trajectories not resolved. What the bridge found:")
+            print(f"      {tr.diagnostics}")
 
     print("\nActive vessel")
     # Outside flight there is no active vessel, and kRPC returns None rather than
