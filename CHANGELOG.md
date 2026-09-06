@@ -8,6 +8,13 @@ All notable changes to KRPC.Bridge. Format follows
 
 ### Added
 
+**Actuators — stock KSP engine and gimbal access over `conn.actuators`**
+
+- Bulk engine and gimbal samples in one RPC, including realized thrust and local gimbal
+  actuation in degrees.
+- Per-engine independent-throttle commands use leases capped at one second. The previous
+  KSP fields are restored on expiry, release, scene change or plugin shutdown.
+
 **Trajectories — a fifth plugin, `conn.trajectories`** (`KRPC.Bridge.Trajectories.dll`)
 
 - The mod's atmospheric impact prediction over kRPC: `available()`, `has_impact()`,

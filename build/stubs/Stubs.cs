@@ -164,12 +164,32 @@ public class Part : UnityEngine.MonoBehaviour
     public double maxTemp;
     public double skinTemperature;
     public double skinMaxTemp;
+    public List<PartModule> Modules = new List<PartModule> ();
 }
 
 public class PartModule : UnityEngine.MonoBehaviour
 {
     public Part part;
     public Vessel vessel;
+}
+
+public class ModuleEngines : PartModule
+{
+    public bool EngineIgnited;
+    public float currentThrottle;
+    public float finalThrust;
+    public float maxThrust;
+    public float thrustPercentage;
+    public bool independentThrottle;
+    public float independentThrottlePercentage;
+}
+
+public class ModuleGimbal : PartModule
+{
+    public bool gimbalLock;
+    public float gimbalLimiter;
+    public float gimbalRange;
+    public UnityEngine.Vector3 actuationLocal;
 }
 
 public static class FlightGlobals

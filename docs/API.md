@@ -12,6 +12,7 @@ launching the game.
 
 - [Conventions](#conventions)
 - [`conn.bridge`](#connbridge) — Core: what loaded, events, jobs, HUD, reflection probe
+- [`conn.actuators`](#connactuators) — per-engine thrust leases and bulk gimbal state
 - [`conn.fmrs`](#connfmrs) — dropped stages, jumps, recovery ledger
 - [`conn.ocisly`](#connocisly) — camera streams across a scene reload
 - [`conn.mech_jeb`](#connmech_jeb) — ascent, staging, every module by name, the landing
@@ -228,6 +229,36 @@ No shipped plugin starts a job — this is scaffolding for ones you write.
 `src/Plugins/Template/` shows the pattern, and is deliberately not built into the release:
 it declares a kRPC service of its own, so shipping it would put a fifth service in every
 user's install.
+
+---
+
+## `conn.actuators`
+
+Stock KSP actuator access used by the GNC S7 prototype. Reads are grouped so one call
+samples every engine or every gimbal on the active vessel. Commands use short leases:
+if the Python client stops renewing, the plugin restores the engine's previous fields
+within at most one second.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `available` | `bool` | Always `True` when the service loaded. |
+| `ping()` | `str` | Returns `"pong"`. |
+| `engine_sample()` | `list[float]` | Rows of 9 values: part `flight_id`, engine ordinal, ignited, realized throttle, realized thrust, max thrust, thrust limit, independent mode, independent percentage. |
+| `gimbal_sample()` | `list[float]` | Rows of 8 values: part `flight_id`, gimbal ordinal, locked, limiter, range, local X/Y/Z actuation in degrees. |
+| `lease_independent_throttle(flight_id, engine_ordinal, percentage, lease_seconds=0.25)` | `bool` | Gives one engine an absolute independent throttle for 0.05–1 s. Renew to continue. |
+| `release_independent_throttle(flight_id, engine_ordinal)` | `bool` | Restores the fields saved when that engine's first lease began. |
+| `release_all()` | `int` | Restores every active lease and returns the number restored. |
+
+`thrust_limit` and independent throttle are different controls. The former is a ceiling
+already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
+following the vessel's main throttle. S7 uses the second mechanism for differential
+thrust. `gimbal_sample()` is observation only: KSP recomputes `ModuleGimbal.actuationLocal`
+inside every `FixedUpdate`, so writing that field from an RPC would not be a persistent
+gimbal command.
+
+The part id is returned as a double in the flat samples because all KSP `uint` flight ids
+are exactly representable by a double. Pass it back as a decimal string to command or
+release a lease.
 
 ---
 

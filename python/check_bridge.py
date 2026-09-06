@@ -65,7 +65,8 @@ def main() -> int:
     line("bridge.ping()", conn.bridge.ping())
     line("core version", conn.bridge.version)
     line("services", ", ".join(
-        s for s in ("bridge", "fmrs", "ocisly", "mech_jeb", "trajectories") if hasattr(conn, s)))
+        s for s in ("bridge", "actuators", "fmrs", "ident", "ocisly", "mech_jeb", "trajectories")
+        if hasattr(conn, s)))
     line("events recorded", conn.bridge.events_recorded)
 
     print("\nPlugins")
@@ -82,7 +83,16 @@ def main() -> int:
         print("  on KRPC.Bridge.Core cannot be satisfied, and says so.")
         return 1
 
-    # 2. FMRS.
+    # 2. Actuators. Read-only here: commands belong to an explicitly armed GNC probe.
+    print("\nActuators")
+    if not hasattr(conn, "actuators"):
+        print("      service missing -- rebuild and reinstall the DLL")
+    else:
+        line("actuators.ping()", conn.actuators.ping())
+        line("engines", len(conn.actuators.engine_sample()) // 9)
+        line("gimbals", len(conn.actuators.gimbal_sample()) // 8)
+
+    # 3. FMRS.
     print("\nFMRS")
     line("available", conn.fmrs.available)
     if conn.fmrs.available:

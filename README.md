@@ -94,6 +94,10 @@ autopilot: the prediction ignores thrust.
 can observe an *instant* rather than sampling a value; a reflection probe for exploring any
 loaded mod from Python.
 
+**`conn.actuators`** — one-call samples of every engine and gimbal on the active vessel,
+plus short, automatically restored leases for per-engine independent throttle. Gimbal
+deflection is observed in degrees; it is not overwritten behind KSP's own `FixedUpdate`.
+
 ## Install
 
 Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY,
@@ -109,6 +113,7 @@ corresponding service reports `available = False` for the others.
    ├── LICENSE, NOTICE, KRPC.Bridge.version
    └── Plugins/
        ├── KRPC.Bridge.Fmrs.dll    + .xml
+       ├── KRPC.Bridge.Actuators.dll + .xml
        ├── KRPC.Bridge.Ocisly.dll  + .xml
        ├── KRPC.Bridge.MechJeb.dll + .xml
        └── KRPC.Bridge.Trajectories.dll + .xml
@@ -138,7 +143,7 @@ corresponding service reports `available = False` for the others.
    ```
 
    `python/check_bridge.py`, in this repository, prints the same thing with a full
-   diagnostic per plugin. It is not in the download: the zip holds the four assemblies
+   diagnostic per plugin. It is not in the download: the zip holds the assemblies
    and their `.xml`, and no Python at all.
 
 **Upgrading from the single-DLL version:** delete the old
@@ -154,7 +159,7 @@ in it. Nothing from the game is copied or redistributed.
 | Command | Produces | When |
 |---|---|---|
 | `.\build.cmd verify` | nothing — just checks the C# compiles | after every code change. One second, no install needed. |
-| `.\build.cmd` | the four DLLs and their `.xml` in `dist/GameData/` | before testing. Also validates every kRPC signature. |
+| `.\build.cmd` | all DLLs and their `.xml` in `dist/GameData/` | before testing. Also validates every kRPC signature. |
 | `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. |
 | `python tools/check_docs.py` | a report | docs against code, signature types, XML comments. |
 | `python tools/package.py` | `dist/KRPC.Bridge-x.y.z.zip` | at release time. This is what people download. |
