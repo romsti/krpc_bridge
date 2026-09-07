@@ -232,6 +232,46 @@ user's install.
 
 ---
 
+## `conn.discovery`
+
+Read-only introspection of the assemblies and types loaded by KSP. This service never
+invokes arbitrary methods and never writes fields or properties. Bulk records are packed
+as tab-separated strings and returned as real `List` instances, not arrays.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `list_assemblies(filter)` | `list[str]` | Loaded assemblies matching comma-separated name fragments. Rows are `name`, version and full name. Empty or `"*"` matches all. |
+| `search_types(assembly_fragment, query, limit)` | `list[str]` | Full type names containing the query. The limit defaults to 50 when non-positive and is capped at 500. |
+| `describe_member(assembly_fragment, type_name, member_name)` | `list[str]` | Exact members or overloads as nine fields: kind, declaring type, visibility, static/instance, value type, parameters, accessors, metadata token and attributes. |
+| `type_hierarchy(assembly_fragment, type_name)` | `list[str]` | Base chain followed by implemented interfaces. Unknown types return an empty list. |
+| `find_part_modules(query)` | `list[str]` | Module types instantiated on the active vessel, with assembly, count and sample part titles. Empty outside a loaded flight. |
+| `runtime_type_fingerprint(assembly_fragment, type_name)` | `str` | Stable member count and SHA-256 used to compare the loaded type with an offline index. |
+
+These calls establish that a member exists and what is loaded. They do not establish that
+the member is on the active behavior path or that using it improves a flight.
+
+---
+
+## `conn.ident`
+
+Stable KSP identities that kRPC's public `Vessel` and `Part` objects hold internally but
+do not expose. The service is available in flight scenes when SpaceCenter resolved.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `available` | `bool` | Whether the kRPC SpaceCenter service resolved. |
+| `ping()` | `str` | Returns `"pong"`. |
+| `part_flight_id(part)` | `str` | The part's KSP `flightID` as an exact decimal string. |
+| `part_flight_ids(parts)` | `list[str]` | One `flightID` per input part, preserving input order. |
+| `vessel_flight_ids(vessel)` | `list[str]` | All `flightID` values on a loaded vessel; an unloaded vessel returns an empty list. |
+| `vessel_ids(vessel)` | `str` | Tab-separated KSP `persistentId` and kRPC vessel Guid. |
+
+Use part `flightID` to address `conn.actuators`, to disambiguate otherwise identical side
+boosters, or to join OCISLY camera names. Use `persistentId` to join FMRS records to live
+kRPC vessel objects.
+
+---
+
 ## `conn.actuators`
 
 Stock KSP actuator access used by the GNC S7 prototype. Reads are grouped so one call
@@ -244,17 +284,26 @@ within at most one second.
 | `available` | `bool` | Always `True` when the service loaded. |
 | `ping()` | `str` | Returns `"pong"`. |
 | `engine_sample()` | `list[float]` | Rows of 9 values: part `flight_id`, engine ordinal, ignited, realized throttle, realized thrust, max thrust, thrust limit, independent mode, independent percentage. |
-| `gimbal_sample()` | `list[float]` | Rows of 8 values: part `flight_id`, gimbal ordinal, locked, limiter, range, local X/Y/Z actuation in degrees. |
+| `gimbal_sample()` | `list[float]` | Rows of 8 values: part `flight_id`, gimbal ordinal, locked, limiter, range, measured local X/Y/Z actuation in degrees. During a lease, response-speed limiting can make this lag the target. |
+| `thrust_direction_sample()` | `list[float]` | Rows of 5 values: part `flight_id`, engine ordinal, then unit direction X/Y/Z in the vessel frame (right, forward, bottom). Reads each current `ModuleEngines.thrustTransforms`, so it remains valid after a revert even when stock kRPC's cached `Thruster` wrapper is stale. |
 | `lease_independent_throttle(flight_id, engine_ordinal, percentage, lease_seconds=0.25)` | `bool` | Gives one engine an absolute independent throttle for 0.05–1 s. Renew to continue. |
 | `release_independent_throttle(flight_id, engine_ordinal)` | `bool` | Restores the fields saved when that engine's first lease began. |
-| `release_all()` | `int` | Restores every active lease and returns the number restored. |
+| `lease_gimbal(flight_id, gimbal_ordinal, x_degrees, y_degrees, lease_seconds=0.25)` | `bool` | Directly commands one gimbal's local X/Y target for 0.05–1 s. Refuses a locked gimbal, clamps each direction to its installed KSP limits and preserves the configured response speed. Renew to continue. |
+| `release_gimbal(flight_id, gimbal_ordinal)` | `bool` | Restores the rotations and active state saved when that gimbal's first lease began. |
+| `release_all()` | `int` | Restores every active throttle and gimbal lease and returns the number restored. |
 
 `thrust_limit` and independent throttle are different controls. The former is a ceiling
 already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
 following the vessel's main throttle. S7 uses the second mechanism for differential
-thrust. `gimbal_sample()` is observation only: KSP recomputes `ModuleGimbal.actuationLocal`
-inside every `FixedUpdate`, so writing that field from an RPC would not be a persistent
-gimbal command.
+thrust.
+
+`lease_gimbal()` does not merely write `ModuleGimbal.actuationLocal`: KSP would overwrite
+that field and the nozzle transforms in `ModuleGimbal.FixedUpdate`. The lease temporarily
+disables that stock calculation, applies the same installed-KSP transform formula with an
+absolute X/Y command, advances toward it with the installed response-speed rule, and
+reapplies it each physics tick. Expiry, explicit release, scene change and add-on
+destruction all restore the captured actuation, rotations and stock active state.
+This is actuator authority only; it is not evidence that a guidance law improves flight.
 
 The part id is returned as a double in the flat samples because all KSP `uint` flight ids
 are exactly representable by a double. Pass it back as a decimal string to command or

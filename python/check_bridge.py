@@ -91,6 +91,13 @@ def main() -> int:
         line("actuators.ping()", conn.actuators.ping())
         line("engines", len(conn.actuators.engine_sample()) // 9)
         line("gimbals", len(conn.actuators.gimbal_sample()) // 8)
+        line("direct thrust directions",
+             len(conn.actuators.thrust_direction_sample()) // 5
+             if hasattr(conn.actuators, "thrust_direction_sample")
+             else "not deployed")
+        line("independent gimbal command",
+             hasattr(conn.actuators, "lease_gimbal") and
+             hasattr(conn.actuators, "release_gimbal"))
 
     # 3. FMRS.
     print("\nFMRS")

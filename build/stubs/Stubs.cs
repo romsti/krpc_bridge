@@ -73,6 +73,27 @@ namespace UnityEngine
     {
         public float x, y, z;
         public Vector3 (float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
+        public static Vector3 zero { get { return new Vector3 (0f, 0f, 0f); } }
+        public static Vector3 right { get { return new Vector3 (1f, 0f, 0f); } }
+        public static Vector3 up { get { return new Vector3 (0f, 1f, 0f); } }
+        public static Vector3 forward { get { return new Vector3 (0f, 0f, 1f); } }
+        public static Vector3 operator * (float value, Vector3 vector) { return vector; }
+        public static Vector3 operator + (Vector3 left, Vector3 right) { return left; }
+        public float sqrMagnitude { get { return 1f; } }
+        public Vector3 normalized { get { return this; } }
+    }
+
+    public struct Quaternion
+    {
+        public static Quaternion AngleAxis (float angle, Vector3 axis) { return new Quaternion (); }
+        public static Quaternion operator * (Quaternion left, Quaternion right) { return left; }
+    }
+
+    public class Transform : Object
+    {
+        public Quaternion localRotation;
+        public Vector3 forward { get { return Vector3.forward; } }
+        public Vector3 InverseTransformDirection (Vector3 direction) { return direction; }
     }
 }
 
@@ -120,6 +141,7 @@ public class Vessel : UnityEngine.MonoBehaviour
     public bool packed;
     public bool loaded;
     public string vesselName;
+    public UnityEngine.Transform ReferenceTransform { get { return null; } }
     public string GetDisplayName () { return null; }
 
     public enum Situations
@@ -182,14 +204,33 @@ public class ModuleEngines : PartModule
     public float thrustPercentage;
     public bool independentThrottle;
     public float independentThrottlePercentage;
+    public List<UnityEngine.Transform> thrustTransforms = new List<UnityEngine.Transform> ();
+    public List<float> thrustTransformMultipliers = new List<float> ();
 }
 
 public class ModuleGimbal : PartModule
 {
     public bool gimbalLock;
+    public bool gimbalActive;
     public float gimbalLimiter;
     public float gimbalRange;
+    public float gimbalRangeXN;
+    public float gimbalRangeXP;
+    public float gimbalRangeYN;
+    public float gimbalRangeYP;
+    public float xMult;
+    public float yMult;
+    public bool flipYZ;
+    public bool useGimbalResponseSpeed;
+    public float gimbalResponseSpeed;
     public UnityEngine.Vector3 actuationLocal;
+    public List<UnityEngine.Transform> gimbalTransforms = new List<UnityEngine.Transform> ();
+    public List<UnityEngine.Quaternion> initRots = new List<UnityEngine.Quaternion> ();
+}
+
+public static class TimeWarp
+{
+    public static float fixedDeltaTime { get { return 0.02f; } }
 }
 
 public static class FlightGlobals

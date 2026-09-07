@@ -95,7 +95,8 @@ can observe an *instant* rather than sampling a value; a reflection probe for ex
 loaded mod from Python.
 
 **`conn.actuators`** — one-call samples of every engine and gimbal on the active vessel,
-plus short, automatically restored leases for per-engine independent throttle. Gimbal
+direct engine thrust directions that survive flight-scene reloads, plus short,
+automatically restored leases for per-engine independent throttle. Gimbal
 deflection is observed in degrees; it is not overwritten behind KSP's own `FixedUpdate`.
 
 ## Install
