@@ -79,6 +79,8 @@ namespace UnityEngine
         public static Vector3 forward { get { return new Vector3 (0f, 0f, 1f); } }
         public static Vector3 operator * (float value, Vector3 vector) { return vector; }
         public static Vector3 operator + (Vector3 left, Vector3 right) { return left; }
+        public static Vector3 operator - (Vector3 left, Vector3 right) { return left; }
+        public static Vector3 operator / (Vector3 vector, float value) { return vector; }
         public float sqrMagnitude { get { return 1f; } }
         public Vector3 normalized { get { return this; } }
     }
@@ -92,6 +94,7 @@ namespace UnityEngine
     public class Transform : Object
     {
         public Quaternion localRotation;
+        public Vector3 position { get { return Vector3.zero; } }
         public Vector3 forward { get { return Vector3.forward; } }
         public Vector3 InverseTransformDirection (Vector3 direction) { return direction; }
     }
@@ -142,6 +145,7 @@ public class Vessel : UnityEngine.MonoBehaviour
     public bool loaded;
     public string vesselName;
     public UnityEngine.Transform ReferenceTransform { get { return null; } }
+    public UnityEngine.Vector3 CurrentCoM { get { return UnityEngine.Vector3.zero; } }
     public string GetDisplayName () { return null; }
 
     public enum Situations

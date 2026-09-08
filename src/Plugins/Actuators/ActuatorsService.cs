@@ -148,6 +148,68 @@ namespace KRPC.Bridge.Actuators
             return output;
         }
 
+        /// <summary>
+        /// Position de poussée de chaque ModuleEngines : bras de levier depuis le
+        /// centre de masse, dans le repère du véhicule.
+        ///
+        /// Lignes de cinq doubles : flight_id, ordinal moteur, puis position
+        /// X/Y/Z (m). Comme ThrustDirectionSample, lit DIRECTEMENT les
+        /// thrustTransforms courants — donc disponible même quand les wrappers
+        /// Thruster de kRPC renvoient un transform nul (observé sur certains
+        /// craft, moteur froid ET chaud). Origine = CurrentCoM, axes droite /
+        /// avant / bas comme Vessel.reference_frame de kRPC : la position EST
+        /// alors le bras de levier r_i attendu par le descripteur de capacité S7.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<double> ThrustPositionSample ()
+        {
+            var output = new List<double> ();
+            var vessel = RequireActiveVessel ();
+            var reference = vessel.ReferenceTransform;
+            if (reference == null)
+                throw new InvalidOperationException ("repère du vaisseau absent");
+            Vector3 com = vessel.CurrentCoM;
+            for (int p = 0; p < vessel.parts.Count; p++) {
+                var part = vessel.parts [p];
+                int ordinal = 0;
+                for (int m = 0; m < part.Modules.Count; m++) {
+                    var engine = part.Modules [m] as ModuleEngines;
+                    if (engine == null)
+                        continue;
+                    Vector3 posWorld = Vector3.zero;
+                    float poids = 0f;
+                    if (engine.thrustTransforms == null ||
+                            engine.thrustTransforms.Count == 0)
+                        throw new InvalidOperationException (
+                            "thrustTransforms absents : part " + part.flightID);
+                    for (int i = 0; i < engine.thrustTransforms.Count; i++) {
+                        var transform = engine.thrustTransforms [i];
+                        if (transform == null)
+                            throw new InvalidOperationException (
+                                "thrustTransform nul : part " + part.flightID);
+                        float multiplicateur = 1f;
+                        if (engine.thrustTransformMultipliers != null &&
+                                i < engine.thrustTransformMultipliers.Count)
+                            multiplicateur = engine.thrustTransformMultipliers [i];
+                        float poidsAbs = Math.Abs (multiplicateur);
+                        posWorld += poidsAbs * transform.position;
+                        poids += poidsAbs;
+                    }
+                    if (poids <= 0f)
+                        throw new InvalidOperationException (
+                            "poids de poussée nul : part " + part.flightID);
+                    Vector3 locale = reference.InverseTransformDirection (
+                        (posWorld / poids) - com);
+                    output.Add (part.flightID);
+                    output.Add (ordinal++);
+                    output.Add (locale.x);
+                    output.Add (locale.y);
+                    output.Add (locale.z);
+                }
+            }
+            return output;
+        }
+
         [KRPCProcedure]
         public static bool LeaseIndependentThrottle (
             string flightId, int engineOrdinal, float percentage, float leaseSeconds = 0.25f)
