@@ -30,7 +30,7 @@ namespace KRPC.Bridge.Actuators
     /// l'actuation et les rotations d'origine.
     /// </summary>
     [KRPCService (Name = "Actuators", GameScene = GameScene.Flight)]
-    public static class ActuatorsService
+    public static partial class ActuatorsService
     {
         [KRPCProperty]
         public static bool Available { get { return true; } }
@@ -214,6 +214,7 @@ namespace KRPC.Bridge.Actuators
         public static bool LeaseIndependentThrottle (
             string flightId, int engineOrdinal, float percentage, float leaseSeconds = 0.25f)
         {
+            ActuatorsAddon.RequireLegacyControlAvailable ();
             var engine = FindEngine (flightId, engineOrdinal);
             ActuatorsAddon.Command (engine, percentage, leaseSeconds);
             return true;
@@ -222,6 +223,7 @@ namespace KRPC.Bridge.Actuators
         [KRPCProcedure]
         public static bool ReleaseIndependentThrottle (string flightId, int engineOrdinal)
         {
+            ActuatorsAddon.RequireLegacyControlAvailable ();
             return ActuatorsAddon.ReleaseThrottle (FindEngine (flightId, engineOrdinal));
         }
 
@@ -235,6 +237,7 @@ namespace KRPC.Bridge.Actuators
             string flightId, int gimbalOrdinal, float xDegrees, float yDegrees,
             float leaseSeconds = 0.25f)
         {
+            ActuatorsAddon.RequireLegacyControlAvailable ();
             ActuatorsAddon.CommandGimbal (
                 FindGimbal (flightId, gimbalOrdinal), xDegrees, yDegrees, leaseSeconds);
             return true;
@@ -244,12 +247,14 @@ namespace KRPC.Bridge.Actuators
         [KRPCProcedure]
         public static bool ReleaseGimbal (string flightId, int gimbalOrdinal)
         {
+            ActuatorsAddon.RequireLegacyControlAvailable ();
             return ActuatorsAddon.ReleaseGimbal (FindGimbal (flightId, gimbalOrdinal));
         }
 
         [KRPCProcedure]
         public static int ReleaseAll ()
         {
+            ActuatorsAddon.RequireLegacyControlAvailable ();
             return ActuatorsAddon.RestoreAll ();
         }
 

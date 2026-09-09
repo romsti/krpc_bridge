@@ -8,6 +8,20 @@ All notable changes to KRPC.Bridge. Format follows
 
 ### Added
 
+**Actuators v2 — coherent snapshots and atomic control frames**
+
+- `control_snapshot_v2()` captures engines, gimbals and every thrust transform in one
+  timestamped call. It includes topology generation, requested/current/realized engine
+  state, finite engine/gimbal response parameters, asymmetric gimbal limits and complete
+  position+direction geometry per nozzle.
+- `acquire_control()` / `renew_control()` / `release_control()` establish one explicit
+  owner with a short watchdog lease bound to the active vessel and topology generation.
+- `apply_control_frame()` validates all engine and gimbal rows before queuing them, then
+  applies the frame together in `FixedUpdate`; sequences, deadlines and result/ack fields
+  make dropped, stale and superseded commands observable.
+- Legacy per-engine/gimbal leases remain available, but reject writes while a v2 owner is
+  active instead of allowing two controllers to fight silently.
+
 **Actuators — stock KSP engine and gimbal access over `conn.actuators`**
 
 - Bulk engine and gimbal samples in one RPC, including realized thrust and local gimbal

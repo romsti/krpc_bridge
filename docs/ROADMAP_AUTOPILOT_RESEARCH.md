@@ -5,6 +5,12 @@
 **Périmètre :** KSP 1.12.5, kRPC 0.6.0 et les mods détectés dans l'installation locale  
 **Statut du document :** recherche et proposition d'architecture, pas spécification d'API figée
 
+> **Premier incrément livré le 9 septembre 2026.** `Actuators` protocole v2 fournit
+> maintenant le snapshot cohérent par tick, la géométrie par transform, la dynamique
+> moteur/gimbal, l'autorité exclusive avec watchdog et les trames moteur/gimbal
+> planifiées et appliquées atomiquement. Il reste à valider ce chemin en vol après
+> déploiement/redémarrage de KSP, puis à construire la matrice d'efficacité 6×N.
+
 ## Résumé exécutif
 
 La roadmap Gemini était globalement bonne sur l'architecture : séparer un cœur robuste de plugins optionnels, isoler les erreurs de compatibilité au build, déplacer les calculs lourds hors du thread Unity et fournir un mécanisme de découverte par réflexion. Une part importante de ce socle a effectivement été réalisée dans `krpc_bridge`.
@@ -728,4 +734,3 @@ Atteindre ces invariants donnera davantage de précision et de fiabilité que l'
 - [NASA — SPLICE](https://www.nasa.gov/safe-and-precise-landing-integrated-capabilities-evolution-splice/)
 - [NASA — Terrain Relative Navigation](https://science.nasa.gov/science-research/science-enabling-technology/technology-highlights/terrain-relative-navigation-landing-between-the-hazards/)
 - [NASA NTRS — estimateur d'état ALHAT](https://ntrs.nasa.gov/citations/20170009197)
-

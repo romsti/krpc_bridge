@@ -286,11 +286,19 @@ within at most one second.
 | `engine_sample()` | `list[float]` | Rows of 9 values: part `flight_id`, engine ordinal, ignited, realized throttle, realized thrust, max thrust, thrust limit, independent mode, independent percentage. |
 | `gimbal_sample()` | `list[float]` | Rows of 8 values: part `flight_id`, gimbal ordinal, locked, limiter, range, measured local X/Y/Z actuation in degrees. During a lease, response-speed limiting can make this lag the target. |
 | `thrust_direction_sample()` | `list[float]` | Rows of 5 values: part `flight_id`, engine ordinal, then unit direction X/Y/Z in the vessel frame (right, forward, bottom). Reads each current `ModuleEngines.thrustTransforms`, so it remains valid after a revert even when stock kRPC's cached `Thruster` wrapper is stale. |
+| `thrust_position_sample()` | `list[float]` | Rows of 5 values: part `flight_id`, engine ordinal, then the thrust-weighted lever X/Y/Z from the current centre of mass in the vessel frame. Prefer the per-transform v2 rows for exact multi-nozzle geometry. |
 | `lease_independent_throttle(flight_id, engine_ordinal, percentage, lease_seconds=0.25)` | `bool` | Gives one engine an absolute independent throttle for 0.05–1 s. Renew to continue. |
 | `release_independent_throttle(flight_id, engine_ordinal)` | `bool` | Restores the fields saved when that engine's first lease began. |
 | `lease_gimbal(flight_id, gimbal_ordinal, x_degrees, y_degrees, lease_seconds=0.25)` | `bool` | Directly commands one gimbal's local X/Y target for 0.05–1 s. Refuses a locked gimbal, clamps each direction to its installed KSP limits and preserves the configured response speed. Renew to continue. |
 | `release_gimbal(flight_id, gimbal_ordinal)` | `bool` | Restores the rotations and active state saved when that gimbal's first lease began. |
 | `release_all()` | `int` | Restores every active throttle and gimbal lease and returns the number restored. |
+| `protocol_version` | `int` | `2` for the atomic snapshot/control-frame protocol below. |
+| `control_snapshot_v2()` | `list[float]` | One coherent, timestamped snapshot containing all engines, gimbals and individual thrust transforms. |
+| `acquire_control(owner, lease_seconds=1)` | `str` | Acquires exclusive v2 engine/gimbal authority for 0.1–5 s and returns an opaque token. Existing legacy leases are restored during this explicit handover. |
+| `renew_control(token, lease_seconds=1)` | `bool` | Renews exclusive authority. It does not extend an actuator command: frames still need to be refreshed. |
+| `apply_control_frame(token, sequence, apply_tick, valid_until_tick, lease_seconds, engine_commands, gimbal_commands)` | `int` | Validates a complete frame and queues it for one `FixedUpdate`; returns its scheduled tick. |
+| `control_status_v2()` | `list[float]` | Ownership, queue, acknowledgement and result state described below. |
+| `release_control(token)` | `int` | Cancels the pending frame, restores all v2 actuator leases and releases authority. |
 
 `thrust_limit` and independent throttle are different controls. The former is a ceiling
 already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
@@ -304,6 +312,55 @@ absolute X/Y command, advances toward it with the installed response-speed rule,
 reapplies it each physics tick. Expiry, explicit release, scene change and add-on
 destruction all restore the captured actuation, rotations and stock active state.
 This is actuator authority only; it is not evidence that a guidance law improves flight.
+
+### Atomic protocol v2
+
+`control_snapshot_v2()` has a 14-double header:
+
+| Offset | Meaning |
+|---:|---|
+| 0–7 | protocol version, physics tick, UT, fixed delta time, vessel persistent id, topology generation, last applied sequence, last result code |
+| 8–9 | engine row count and stride (`18`) |
+| 10–11 | gimbal row count and stride (`19`) |
+| 12–13 | thrust-transform row count and stride (`10`) |
+
+The three row sections immediately follow the header, in that order.
+
+An engine row is: `flight_id, ordinal, ignited, requested_throttle,
+current_throttle, final_thrust, max_thrust, thrust_percentage,
+independent_throttle, independent_percentage, finite_response,
+acceleration_speed, deceleration_speed, requested_mass_flow,
+propellant_requirement_met, real_isp, thrust_transform_count, leased`.
+
+A gimbal row is: `flight_id, ordinal, locked, stock_active, limiter, range,
+range_x_negative, range_x_positive, range_y_negative, range_y_positive,
+finite_response, response_speed, actual_x, actual_y, actual_z,
+transform_count, leased, target_x, target_y`.
+
+A thrust-transform row preserves the geometry that an engine-level average loses:
+`flight_id, engine_ordinal, transform_index, multiplier, lever_x, lever_y,
+lever_z, direction_x, direction_y, direction_z`. Lever and direction use the vessel
+frame (right, forward, bottom); the lever is measured from the current centre of mass.
+Unavailable transform geometry is represented by six `NaN` values, never plausible zeros.
+
+`apply_control_frame()` accepts engine rows of `flight_id, ordinal, percentage` and
+gimbal rows of `flight_id, ordinal, x_degrees, y_degrees`. All identifiers must be exact
+integers carried as doubles and no actuator may appear twice. `sequence` is strictly
+increasing for one authority token. Use `apply_tick=0` for the next observed physics tick
+and `valid_until_tick=0` for the same tick; explicitly scheduled frames are bounded to 250
+ticks ahead. The method only queues after every row has resolved and validated. The add-on
+then applies the whole frame from one `FixedUpdate` callback.
+
+`control_status_v2()` returns 11 doubles: `protocol, tick, topology_generation,
+owner_active, owner_ttl_seconds, pending_sequence, pending_tick,
+last_accepted_sequence, last_applied_sequence, result, last_applied_tick`.
+
+Result codes are `0` none, `1` queued, `2` applied, `-1` frame expired, `-2` authority
+lost/expired, `-3` topology or active vessel changed, `-4` unexpected application failure,
+and `-5` a queued frame was superseded. A topology change invalidates the token rather
+than applying commands addressed to stale part/module ordinals. While v2 authority is
+active, legacy per-actuator lease procedures reject commands so two control paths cannot
+silently fight.
 
 The part id is returned as a double in the flat samples because all KSP `uint` flight ids
 are exactly representable by a double. Pass it back as a decimal string to command or

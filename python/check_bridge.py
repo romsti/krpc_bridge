@@ -98,6 +98,25 @@ def main() -> int:
         line("independent gimbal command",
              hasattr(conn.actuators, "lease_gimbal") and
              hasattr(conn.actuators, "release_gimbal"))
+        if hasattr(conn.actuators, "control_snapshot_v2"):
+            snapshot = conn.actuators.control_snapshot_v2()
+            if len(snapshot) < 14:
+                line("atomic protocol v2", "INVALID header")
+            else:
+                expected = (14 + int(snapshot[8]) * int(snapshot[9])
+                            + int(snapshot[10]) * int(snapshot[11])
+                            + int(snapshot[12]) * int(snapshot[13]))
+                line("atomic protocol v2", int(snapshot[0]))
+                line("physics/topology tick",
+                     f"{int(snapshot[1])} / {int(snapshot[5])}")
+                line("per-nozzle geometry", int(snapshot[12]))
+                line("snapshot shape",
+                     "ok" if len(snapshot) == expected
+                     else f"INVALID {len(snapshot)} != {expected}")
+                status_v2 = conn.actuators.control_status_v2()
+                line("exclusive owner active", bool(status_v2[3]))
+        else:
+            line("atomic protocol v2", "not deployed")
 
     # 3. FMRS.
     print("\nFMRS")

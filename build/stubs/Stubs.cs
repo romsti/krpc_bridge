@@ -202,12 +202,19 @@ public class PartModule : UnityEngine.MonoBehaviour
 public class ModuleEngines : PartModule
 {
     public bool EngineIgnited;
+    public float requestedThrottle;
     public float currentThrottle;
     public float finalThrust;
     public float maxThrust;
     public float thrustPercentage;
     public bool independentThrottle;
     public float independentThrottlePercentage;
+    public bool useEngineResponseTime;
+    public float engineAccelerationSpeed;
+    public float engineDecelerationSpeed;
+    public double requestedMassFlow;
+    public double propellantReqMet;
+    public float realIsp;
     public List<UnityEngine.Transform> thrustTransforms = new List<UnityEngine.Transform> ();
     public List<float> thrustTransformMultipliers = new List<float> ();
 }
