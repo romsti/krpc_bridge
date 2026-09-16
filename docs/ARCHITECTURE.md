@@ -91,7 +91,8 @@ GameData/KRPC.Bridge/
 └── Plugins/
     ├── KRPC.Bridge.Fmrs.dll    + .xml
     ├── KRPC.Bridge.Ocisly.dll  + .xml
-    └── KRPC.Bridge.MechJeb.dll + .xml
+    ├── KRPC.Bridge.MechJeb.dll + .xml
+    └── KRPC.Bridge.Trajectories.dll + .xml
 ```
 
 The `.xml` must accompany **each** DLL in its own folder — kRPC looks for a file of the
@@ -108,7 +109,7 @@ src/
   Core/                      KRPC.Bridge.Core.dll
   Plugins/
     Template/                copy this to start a plugin
-    Fmrs/  Ocisly/  MechJeb/
+    Fmrs/  Ocisly/  MechJeb/  Trajectories/
 build/
   stubs/Stubs.cs             stand-ins so sources type-check with no KSP
   verify/                    compiles every source against the stubs

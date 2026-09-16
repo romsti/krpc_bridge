@@ -4,6 +4,52 @@ All notable changes to KRPC.Bridge. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Actuators v2 — coherent snapshots and atomic control frames**
+
+- `control_snapshot_v2()` captures engines, gimbals and every thrust transform in one
+  timestamped call. It includes topology generation, requested/current/realized engine
+  state, finite engine/gimbal response parameters, asymmetric gimbal limits and complete
+  position+direction geometry per nozzle.
+- `acquire_control()` / `renew_control()` / `release_control()` establish one explicit
+  owner with a short watchdog lease bound to the active vessel and topology generation.
+- `apply_control_frame()` validates all engine and gimbal rows before queuing them, then
+  applies the frame together in `FixedUpdate`; sequences, deadlines and result/ack fields
+  make dropped, stale and superseded commands observable.
+- Legacy per-engine/gimbal leases remain available, but reject writes while a v2 owner is
+  active instead of allowing two controllers to fight silently.
+
+**Actuators — stock KSP engine and gimbal access over `conn.actuators`**
+
+- Bulk engine and gimbal samples in one RPC, including realized thrust and local gimbal
+  actuation in degrees.
+- Per-engine independent-throttle commands use leases capped at one second. The previous
+  KSP fields are restored on expiry, release, scene change or plugin shutdown.
+
+**Trajectories — a fifth plugin, `conn.trajectories`** (`KRPC.Bridge.Trajectories.dll`)
+
+- The mod's atmospheric impact prediction over kRPC: `available()`, `has_impact()`,
+  `get_impact_geo()` (latitude, longitude, terrain altitude), `get_impact_position()`
+  (the mod's raw body-relative vector), `get_time_till_impact()` — these five keep the
+  names, shapes and failure behaviour of the previous single-DLL `KRPCTrajectories`
+  bridge, byte for byte, so existing clients need no change. `available()` is therefore a
+  procedure, not a property.
+- New: `get_end_time()`, `get_impact_velocity()`, `update_trajectory()`, `always_update`;
+  the landing target — `has_target()`, `set_target()`, `clear_target()`, `get_target()`,
+  `get_planned_direction()`, `get_corrected_direction()`; the descent profile —
+  `get_descent_profile_angles()/modes()/grades()`, `set_descent_profile()`,
+  `reset_descent_profile(aoa_deg)`, `retrograde_entry`, `prograde_entry`. Angles are
+  degrees on the wire and converted to the radians `Trajectories.API` speaks.
+- Every member of `Trajectories.API` is resolved once at load; one that the installed
+  version lacks raises `Trajectories.API.<name> absent (vX)` and is listed in
+  `diagnostics`, never a `NullReferenceException`. `AlwaysUpdate` is switched on at every
+  flight-scene start so the prediction is live with the mod's window closed.
+- Verified against Trajectories 2.4.5.4 (members read from the installed DLL by
+  reflection). Reached by reflection only; the mod is GPL-3.0 and nothing of it is linked.
+
 ## [1.1.0] — 2026-08-08
 
 MechJeb goes from one module to all of them. 1.0.0 could reach `AscentSettings` and

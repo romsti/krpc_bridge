@@ -65,7 +65,8 @@ def main() -> int:
     line("bridge.ping()", conn.bridge.ping())
     line("core version", conn.bridge.version)
     line("services", ", ".join(
-        s for s in ("bridge", "fmrs", "ocisly", "mech_jeb") if hasattr(conn, s)))
+        s for s in ("bridge", "actuators", "fmrs", "ident", "ocisly", "mech_jeb", "trajectories")
+        if hasattr(conn, s)))
     line("events recorded", conn.bridge.events_recorded)
 
     print("\nPlugins")
@@ -82,7 +83,42 @@ def main() -> int:
         print("  on KRPC.Bridge.Core cannot be satisfied, and says so.")
         return 1
 
-    # 2. FMRS.
+    # 2. Actuators. Read-only here: commands belong to an explicitly armed GNC probe.
+    print("\nActuators")
+    if not hasattr(conn, "actuators"):
+        print("      service missing -- rebuild and reinstall the DLL")
+    else:
+        line("actuators.ping()", conn.actuators.ping())
+        line("engines", len(conn.actuators.engine_sample()) // 9)
+        line("gimbals", len(conn.actuators.gimbal_sample()) // 8)
+        line("direct thrust directions",
+             len(conn.actuators.thrust_direction_sample()) // 5
+             if hasattr(conn.actuators, "thrust_direction_sample")
+             else "not deployed")
+        line("independent gimbal command",
+             hasattr(conn.actuators, "lease_gimbal") and
+             hasattr(conn.actuators, "release_gimbal"))
+        if hasattr(conn.actuators, "control_snapshot_v2"):
+            snapshot = conn.actuators.control_snapshot_v2()
+            if len(snapshot) < 14:
+                line("atomic protocol v2", "INVALID header")
+            else:
+                expected = (14 + int(snapshot[8]) * int(snapshot[9])
+                            + int(snapshot[10]) * int(snapshot[11])
+                            + int(snapshot[12]) * int(snapshot[13]))
+                line("atomic protocol v2", int(snapshot[0]))
+                line("physics/topology tick",
+                     f"{int(snapshot[1])} / {int(snapshot[5])}")
+                line("per-nozzle geometry", int(snapshot[12]))
+                line("snapshot shape",
+                     "ok" if len(snapshot) == expected
+                     else f"INVALID {len(snapshot)} != {expected}")
+                status_v2 = conn.actuators.control_status_v2()
+                line("exclusive owner active", bool(status_v2[3]))
+        else:
+            line("atomic protocol v2", "not deployed")
+
+    # 3. FMRS.
     print("\nFMRS")
     line("available", conn.fmrs.available)
     if conn.fmrs.available:
@@ -231,6 +267,37 @@ def main() -> int:
             print("      MechJeb not resolved. What the bridge found:")
             print(f"      {conn.mech_jeb.diagnostics}")
             print("      (send me this line - it names the exact member that moved)")
+
+    # 5. Trajectories. The service is Flight-only, so outside flight kRPC does not
+    # offer it at all and hasattr is False - that is normal, not a missing DLL.
+    print("\nTrajectories")
+    if not hasattr(conn, "trajectories"):
+        print("      service not offered in this scene (Flight only), or the DLL did not load")
+    else:
+        tr = conn.trajectories
+        line("trajectories.ping()", tr.ping())
+        # available() is a PROCEDURE on this service - parentheses - because the
+        # previous single-DLL bridge had it that way and existing clients call it so.
+        line("available()", tr.available())
+        if tr.available():
+            line("mod version", tr.mod_version)
+            for label, read in (("api version", lambda: tr.api_version),
+                                ("always update", lambda: tr.always_update),
+                                ("has impact", lambda: tr.has_impact()),
+                                ("time till impact", lambda: tr.get_time_till_impact()),
+                                ("has target", lambda: tr.has_target()),
+                                ("retrograde entry", lambda: tr.retrograde_entry),
+                                ("profile angles deg", lambda: tr.get_descent_profile_angles())):
+                try:
+                    line(label, read())
+                except RuntimeError as exc:
+                    line(label, f"unreadable: {exc}")
+            if _safe(lambda: tr.has_impact(), False):
+                lat, lon, alt = tr.get_impact_geo()
+                line("impact", f"lat {lat:.4f}  lon {lon:.4f}  alt {alt:.0f} m")
+        else:
+            print("      Trajectories not resolved. What the bridge found:")
+            print(f"      {tr.diagnostics}")
 
     print("\nActive vessel")
     # Outside flight there is no active vessel, and kRPC returns None rather than

@@ -1,7 +1,7 @@
 # KRPC.Bridge
 
-**kRPC services for FMRS, OCISLY and MechJeb 2.** Three Kerbal Space Program mods that
-have no scriptable interface at all, made drivable from Python.
+**kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
+mods that have no scriptable interface at all, made drivable from Python.
 
 [![Documentation](https://img.shields.io/badge/docs-romsti.github.io-deeppink)](https://romsti.github.io/krpc_bridge/)
 [![KSP 1.12.x](https://img.shields.io/badge/KSP-1.12.x-blue)](https://www.kerbalspaceprogram.com/)
@@ -42,7 +42,7 @@ objects, plus the `KSPField`, `KSPEvent` and `KSPAction` members of any `PartMod
 that is the whole of it. A mod whose functionality lives in a static class, a singleton or
 a `ScenarioModule` is simply invisible.
 
-All three mods here are exactly that shape:
+All four mods here are exactly that shape:
 
 - **FMRS** exposes no `KSPEvent`, no action group and no key binding. Its jump API is a
   public method on a `MonoBehaviour` that stock kRPC has no way to reach. And the jump is
@@ -55,13 +55,17 @@ All three mods here are exactly that shape:
   ([Genhis/KRPC.MechJeb](https://github.com/Genhis/KRPC.MechJeb)) targets 2.14.3 and no
   longer loads against 2.15.x, because it looks types and members up by exact name and
   2.15 renamed most of them.
+- **Trajectories** has a real public API — a static class, `Trajectories.API` — which is
+  exactly the shape kRPC cannot see. It holds the only atmospheric impact prediction in
+  the game that integrates the stock drag cubes at the vessel's actual attitude, and
+  stock kRPC has no impact prediction of any kind.
 
-This mod reaches all three by reflection, resolved once at load, and reports member by
+This mod reaches all four by reflection, resolved once at load, and reports member by
 member when something has moved.
 
 ## What you get
 
-A hundred and twenty-nine remote procedures across four services. The full reference is in
+A hundred and fifty-odd remote procedures across five services. The full reference is in
 [`docs/API.md`](docs/API.md); the highlights:
 
 **`conn.fmrs`** — arm and disarm; list dropped stages with their separation timestamps,
@@ -79,15 +83,27 @@ a string in your script rather than a rebuilt DLL. And the reason this service e
 take back the staging decision while MechJeb keeps flying, which is the only way to drop
 side boosters that share a stage with the core.
 
+**`conn.trajectories`** — Trajectories' atmospheric impact point as latitude, longitude and
+terrain altitude, the seconds until it, the impact velocity; set and clear the mod's
+landing target and read the two navball directions it derives from it; read and write the
+four-node descent profile, or reset it to retrograde in one call, so the prediction
+integrates the attitude you *will* fly rather than the one you have. A witness, not an
+autopilot: the prediction ignores thrust.
+
 **`conn.bridge`** — what loaded and why not; an ordered, id-numbered event log so a script
 can observe an *instant* rather than sampling a value; a reflection probe for exploring any
 loaded mod from Python.
 
+**`conn.actuators`** — one-call samples of every engine and gimbal on the active vessel,
+direct engine thrust directions that survive flight-scene reloads, plus short,
+automatically restored leases for per-engine independent throttle. Gimbal
+deflection is observed in degrees; it is not overwritten behind KSP's own `FixedUpdate`.
+
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY
-and MechJeb are each optional — install the ones you use, and the corresponding service
-reports `available = False` for the others.
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY,
+MechJeb and Trajectories are each optional — install the ones you use, and the
+corresponding service reports `available = False` for the others.
 
 1. Download the latest release and unzip it so that `GameData/KRPC.Bridge/` lands in your
    KSP `GameData/`:
@@ -98,8 +114,10 @@ reports `available = False` for the others.
    ├── LICENSE, NOTICE, KRPC.Bridge.version
    └── Plugins/
        ├── KRPC.Bridge.Fmrs.dll    + .xml
+       ├── KRPC.Bridge.Actuators.dll + .xml
        ├── KRPC.Bridge.Ocisly.dll  + .xml
-       └── KRPC.Bridge.MechJeb.dll + .xml
+       ├── KRPC.Bridge.MechJeb.dll + .xml
+       └── KRPC.Bridge.Trajectories.dll + .xml
    ```
 
    Keep each `.xml` next to its `.dll`: kRPC reads it to build the Python docstrings, so
@@ -122,11 +140,11 @@ reports `available = False` for the others.
    >>> conn.bridge.ping()
    'pong'
    >>> conn.bridge.available_plugins
-   ['FMRS', 'OCISLY', 'MechJeb']
+   ['FMRS', 'OCISLY', 'MechJeb', 'Trajectories']
    ```
 
    `python/check_bridge.py`, in this repository, prints the same thing with a full
-   diagnostic per plugin. It is not in the download: the zip holds the four assemblies
+   diagnostic per plugin. It is not in the download: the zip holds the assemblies
    and their `.xml`, and no Python at all.
 
 **Upgrading from the single-DLL version:** delete the old
@@ -142,7 +160,7 @@ in it. Nothing from the game is copied or redistributed.
 | Command | Produces | When |
 |---|---|---|
 | `.\build.cmd verify` | nothing — just checks the C# compiles | after every code change. One second, no install needed. |
-| `.\build.cmd` | the four DLLs and their `.xml` in `dist/GameData/` | before testing. Also validates every kRPC signature. |
+| `.\build.cmd` | all DLLs and their `.xml` in `dist/GameData/` | before testing. Also validates every kRPC signature. |
 | `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. |
 | `python tools/check_docs.py` | a report | docs against code, signature types, XML comments. |
 | `python tools/package.py` | `dist/KRPC.Bridge-x.y.z.zip` | at release time. This is what people download. |
@@ -253,9 +271,19 @@ gives you the tokens.
 reads it as it is enabled, to decide whether to register with the staging controller at all.
 Setting it true again later re-registers nothing — cycle `ascent_enabled` instead.
 
+**Trajectories predicts the coast, not the flight.** Its impact point ignores thrust
+entirely, so under power it answers "where do I land if I cut the engines now". It
+integrates the vessel's *current* attitude unless a descent profile is set — a booster
+still pointed for its boostback is predicted as if it would fall that way down. Call
+`conn.trajectories.reset_descent_profile(180)` (or set `retrograde_entry = True`) once at
+boot to have it integrate a tail-first descent instead. And it recomputes at its own
+cadence, not on each read: expect a prediction one or two seconds old during a fast
+sweep, and compare `get_time_till_impact()` between reads before trusting a jump.
+
 ## Compatibility
 
-Verified against **FMRS Continued 1.2.9.6**, **kRPC 0.6.0**, **KSP 1.12.5**.
+Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.6.0**,
+**KSP 1.12.5**.
 
 Nothing is bound by hard reference, and every lookup is reported individually, so a mod
 update that renames one member costs you that member rather than the service. When
@@ -270,6 +298,6 @@ Source: https://github.com/romsti/krpc_bridge
 
 This mod ships only its own assemblies. It links against kRPC (LGPL v3, Copyright
 2015-2023 kRPC Org) using the copy already in your `GameData`, and reaches FMRS Continued
-(MIT), MechJeb 2 (GPL-3.0), OCISLY and HullcamVDS Continued (GPL-3.0) purely by reflection
-— no compile-time reference, no copied code, nothing redistributed. Thanks to their
-authors and maintainers.
+(MIT), MechJeb 2 (GPL-3.0), OCISLY and HullcamVDS Continued (GPL-3.0) and Trajectories
+(GPL-3.0) purely by reflection — no compile-time reference, no copied code, nothing
+redistributed. Thanks to their authors and maintainers.

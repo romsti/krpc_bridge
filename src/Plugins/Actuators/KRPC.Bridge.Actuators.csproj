@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Actuators</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Actuators</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+</Project>

@@ -1,7 +1,7 @@
 # KRPC.Bridge
 
-**kRPC services for FMRS, OCISLY and MechJeb 2.** Three Kerbal Space Program mods that
-have no scriptable interface at all, made drivable from Python.
+**kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
+mods that have no scriptable interface at all, made drivable from Python.
 
 ```python
 import krpc
@@ -47,7 +47,7 @@ objects, plus the `KSPField`, `KSPEvent` and `KSPAction` members of any `PartMod
 that is the whole of it. A mod whose functionality lives in a static class, a singleton or
 a `ScenarioModule` is simply invisible.
 
-All three mods here are exactly that shape.
+All four mods here are exactly that shape.
 
 **FMRS** exposes no `KSPEvent`, no action group and no key binding. Its jump API is a public
 method on a `MonoBehaviour` that stock kRPC has no way to reach. And the jump is not a
@@ -62,15 +62,20 @@ back.
 2.14.3 and no longer loads against 2.15.x, because it looks types and members up by exact
 name and 2.15 renamed most of them.
 
-This mod reaches all three by reflection, resolved once at load, and reports member by
+**Trajectories** has a real public API — a static class, `Trajectories.API` — which is
+exactly the shape kRPC cannot see. It holds the only atmospheric impact prediction in the
+game that integrates the stock drag cubes at the vessel's actual attitude, and stock kRPC
+has no impact prediction of any kind.
+
+This mod reaches all four by reflection, resolved once at load, and reports member by
 member when something has moved. Each integration is a separate assembly and degrades on
 its own: a mod you do not have reports `available = False` with a diagnostic naming exactly
 what was looked for, and nothing else is affected.
 
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY and
-MechJeb are each optional.
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY,
+MechJeb and Trajectories are each optional.
 
 1. Download the [latest release](https://github.com/romsti/krpc_bridge/releases/latest) and
    unzip it so `GameData/KRPC.Bridge/` lands in your KSP `GameData/`. Keep each `.xml` next
@@ -92,7 +97,8 @@ MechJeb are each optional.
     >>> conn.bridge.ping()
     'pong'
     >>> conn.bridge.available_plugins
-    ['FMRS', 'OCISLY', 'MechJeb']
+    ['FMRS', 'OCISLY', 'MechJeb', 'Trajectories']
     ```
 
-Verified against **FMRS Continued 1.2.9.6**, **kRPC 0.6.0**, **KSP 1.12.5**.
+Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.6.0**,
+**KSP 1.12.5**.

@@ -66,6 +66,48 @@ namespace UnityEngine
         public static float time { get { return 0f; } }
         public static float fixedDeltaTime { get { return 0.02f; } }
     }
+
+    // The Trajectories plugin unboxes the mod's Vector3? results. Never crosses the kRPC
+    // wire: it is flattened to an IList of double first.
+    public struct Vector3
+    {
+        public float x, y, z;
+        public Vector3 (float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
+        public static Vector3 zero { get { return new Vector3 (0f, 0f, 0f); } }
+        public static Vector3 right { get { return new Vector3 (1f, 0f, 0f); } }
+        public static Vector3 up { get { return new Vector3 (0f, 1f, 0f); } }
+        public static Vector3 forward { get { return new Vector3 (0f, 0f, 1f); } }
+        public static Vector3 operator * (float value, Vector3 vector) { return vector; }
+        public static Vector3 operator + (Vector3 left, Vector3 right) { return left; }
+        public static Vector3 operator - (Vector3 left, Vector3 right) { return left; }
+        public static Vector3 operator / (Vector3 vector, float value) { return vector; }
+        public float sqrMagnitude { get { return 1f; } }
+        public Vector3 normalized { get { return this; } }
+    }
+
+    public struct Quaternion
+    {
+        public static Quaternion AngleAxis (float angle, Vector3 axis) { return new Quaternion (); }
+        public static Quaternion operator * (Quaternion left, Quaternion right) { return left; }
+    }
+
+    public class Transform : Object
+    {
+        public Quaternion localRotation;
+        public Vector3 position { get { return Vector3.zero; } }
+        public Vector3 forward { get { return Vector3.forward; } }
+        public Vector3 InverseTransformDirection (Vector3 direction) { return direction; }
+    }
+}
+
+// KSP's double-precision vector (global namespace). Only what the Trajectories plugin
+// uses to turn a body-relative impact into latitude and longitude.
+public struct Vector3d
+{
+    public double x, y, z;
+    public Vector3d (double x, double y, double z) { this.x = x; this.y = y; this.z = z; }
+    public static Vector3d zero { get { return new Vector3d (0, 0, 0); } }
+    public static Vector3d operator + (Vector3d a, Vector3d b) { return new Vector3d (a.x + b.x, a.y + b.y, a.z + b.z); }
 }
 
 // ------------------------------------------------- KSP (Assembly-CSharp, global namespace)
@@ -102,6 +144,8 @@ public class Vessel : UnityEngine.MonoBehaviour
     public bool packed;
     public bool loaded;
     public string vesselName;
+    public UnityEngine.Transform ReferenceTransform { get { return null; } }
+    public UnityEngine.Vector3 CurrentCoM { get { return UnityEngine.Vector3.zero; } }
     public string GetDisplayName () { return null; }
 
     public enum Situations
@@ -115,6 +159,7 @@ public class Vessel : UnityEngine.MonoBehaviour
     public double missionTime;
     public Orbit orbit;
     public PatchedConicSolver patchedConicSolver;
+    public CelestialBody mainBody { get { return null; } }
 }
 
 // The maneuver-node side of the stock API, used by the MechJeb plugin's maneuver planner.
@@ -145,6 +190,7 @@ public class Part : UnityEngine.MonoBehaviour
     public double maxTemp;
     public double skinTemperature;
     public double skinMaxTemp;
+    public List<PartModule> Modules = new List<PartModule> ();
 }
 
 public class PartModule : UnityEngine.MonoBehaviour
@@ -153,12 +199,58 @@ public class PartModule : UnityEngine.MonoBehaviour
     public Vessel vessel;
 }
 
+public class ModuleEngines : PartModule
+{
+    public bool EngineIgnited;
+    public float requestedThrottle;
+    public float currentThrottle;
+    public float finalThrust;
+    public float maxThrust;
+    public float thrustPercentage;
+    public bool independentThrottle;
+    public float independentThrottlePercentage;
+    public bool useEngineResponseTime;
+    public float engineAccelerationSpeed;
+    public float engineDecelerationSpeed;
+    public double requestedMassFlow;
+    public double propellantReqMet;
+    public float realIsp;
+    public List<UnityEngine.Transform> thrustTransforms = new List<UnityEngine.Transform> ();
+    public List<float> thrustTransformMultipliers = new List<float> ();
+}
+
+public class ModuleGimbal : PartModule
+{
+    public bool gimbalLock;
+    public bool gimbalActive;
+    public float gimbalLimiter;
+    public float gimbalRange;
+    public float gimbalRangeXN;
+    public float gimbalRangeXP;
+    public float gimbalRangeYN;
+    public float gimbalRangeYP;
+    public float xMult;
+    public float yMult;
+    public bool flipYZ;
+    public bool useGimbalResponseSpeed;
+    public float gimbalResponseSpeed;
+    public UnityEngine.Vector3 actuationLocal;
+    public List<UnityEngine.Transform> gimbalTransforms = new List<UnityEngine.Transform> ();
+    public List<UnityEngine.Quaternion> initRots = new List<UnityEngine.Quaternion> ();
+}
+
+public static class TimeWarp
+{
+    public static float fixedDeltaTime { get { return 0.02f; } }
+}
+
 public static class FlightGlobals
 {
     public static Vessel ActiveVessel { get { return null; } }
     public static bool ready { get { return false; } }
     public static List<Vessel> Vessels = new List<Vessel> ();
     public static List<Vessel> VesselsLoaded = new List<Vessel> ();
+    public static CelestialBody currentMainBody { get { return null; } }
 }
 
 public class EventVoid
@@ -279,6 +371,16 @@ public class ProtoVessel
 public class CelestialBody : UnityEngine.MonoBehaviour
 {
     public string bodyName;
+    // World position of the body's centre, and the geographic conversions the
+    // Trajectories plugin uses on a body-relative impact vector. Real signatures:
+    //   public Vector3d position;
+    //   public double GetLatitude (Vector3d worldPos)
+    //   public double GetLongitude (Vector3d worldPos)
+    //   public double TerrainAltitude (double latitude, double longitude, bool allowNegative = false)
+    public Vector3d position;
+    public double GetLatitude (Vector3d worldPos) { return 0.0; }
+    public double GetLongitude (Vector3d worldPos) { return 0.0; }
+    public double TerrainAltitude (double latitude, double longitude, bool allowNegative = false) { return 0.0; }
 }
 
 public class EventReport

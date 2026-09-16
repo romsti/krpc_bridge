@@ -31,9 +31,11 @@ MODDIR = os.path.join(GAMEDATA, "KRPC.Bridge")
 
 EXPECTED = [
     "KRPC.Bridge.Core.dll",
+    "Plugins/KRPC.Bridge.Actuators.dll",
     "Plugins/KRPC.Bridge.Fmrs.dll",
     "Plugins/KRPC.Bridge.Ocisly.dll",
     "Plugins/KRPC.Bridge.MechJeb.dll",
+    "Plugins/KRPC.Bridge.Trajectories.dll",
 ]
 
 EXTRAS = [

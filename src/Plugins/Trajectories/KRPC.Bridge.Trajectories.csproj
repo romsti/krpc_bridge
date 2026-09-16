@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Trajectories plugin. Everything not named here - target framework, KSP and kRPC
+    references, documentation file, output routing, deploy target - is inherited from
+    Directory.Build.props / Directory.Build.targets at the repo root.
+
+    There is NO reference to Trajectories.dll, and there must never be one: the mod is
+    GPL-3.0 and optional, and a hard reference would make this assembly fail to load
+    when it is absent. Every member of Trajectories.API is resolved by name at runtime
+    in TrajectoriesAddon.cs.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Trajectories</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Trajectories</RootNamespace>
+
+    <!-- This one line is what puts the DLL in GameData\KRPC.Bridge\Plugins\ rather
+         than at the root next to the Core. It has to be set HERE, in the project body:
+         Directory.Build.targets is imported after the SDK has already frozen TargetPath,
+         so an OutputPath set there changes the property and not the actual output. -->
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Private=false: compile-time types and build ordering from the Core, but no
+         second copy of KRPC.Bridge.Core.dll inside Plugins\. -->
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+</Project>

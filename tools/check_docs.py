@@ -70,12 +70,31 @@ def parse_sources():
         re.MULTILINE,
     )
 
-    for path in sorted(glob.glob(os.path.join(ROOT, "src", "**", "*.cs"), recursive=True)):
-        src = io.open(path, encoding="utf-8").read()
+    paths = sorted(glob.glob(os.path.join(ROOT, "src", "**", "*.cs"), recursive=True))
+    sources = {path: io.open(path, encoding="utf-8").read() for path in paths}
+
+    # Attributes applied to one part of a partial class belong to the combined type.
+    # Discover that relationship first so RPC members may live in a focused second file
+    # without disappearing from documentation and signature checks.
+    partial_services = {}
+    for path, src in sources.items():
         svc = re.search(r'\[KRPCService\s*\(\s*Name\s*=\s*"([^"]+)"', src)
         if not svc:
             continue
         name = svc.group(1)
+        cls = re.search(r'public\s+static\s+(?:partial\s+)?class\s+(\w+)', src[svc.end():])
+        if cls:
+            partial_services[cls.group(1)] = name
+
+    for path, src in sources.items():
+        svc = re.search(r'\[KRPCService\s*\(\s*Name\s*=\s*"([^"]+)"', src)
+        name = svc.group(1) if svc else None
+        if name is None:
+            partial = re.search(r'public\s+static\s+partial\s+class\s+(\w+)', src)
+            if partial:
+                name = partial_services.get(partial.group(1))
+        if name is None:
+            continue
         members = services.setdefault(name, {})
         for m in member_re.finditer(src):
             kind, rtype, member, args = m.group(1), m.group(2).strip(), m.group(3), m.group(4)

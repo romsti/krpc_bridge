@@ -12,10 +12,13 @@ launching the game.
 
 - [Conventions](#conventions)
 - [`conn.bridge`](#connbridge) — Core: what loaded, events, jobs, HUD, reflection probe
+- [`conn.actuators`](#connactuators) — per-engine thrust leases and bulk gimbal state
 - [`conn.fmrs`](#connfmrs) — dropped stages, jumps, recovery ledger
 - [`conn.ocisly`](#connocisly) — camera streams across a scene reload
 - [`conn.mech_jeb`](#connmech_jeb) — ascent, staging, every module by name, the landing
   predictor and the maneuver planner
+- [`conn.trajectories`](#conntrajectories) — Trajectories' impact prediction, landing
+  target and descent profile
 
 ---
 
@@ -226,6 +229,142 @@ No shipped plugin starts a job — this is scaffolding for ones you write.
 `src/Plugins/Template/` shows the pattern, and is deliberately not built into the release:
 it declares a kRPC service of its own, so shipping it would put a fifth service in every
 user's install.
+
+---
+
+## `conn.discovery`
+
+Read-only introspection of the assemblies and types loaded by KSP. This service never
+invokes arbitrary methods and never writes fields or properties. Bulk records are packed
+as tab-separated strings and returned as real `List` instances, not arrays.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `list_assemblies(filter)` | `list[str]` | Loaded assemblies matching comma-separated name fragments. Rows are `name`, version and full name. Empty or `"*"` matches all. |
+| `search_types(assembly_fragment, query, limit)` | `list[str]` | Full type names containing the query. The limit defaults to 50 when non-positive and is capped at 500. |
+| `describe_member(assembly_fragment, type_name, member_name)` | `list[str]` | Exact members or overloads as nine fields: kind, declaring type, visibility, static/instance, value type, parameters, accessors, metadata token and attributes. |
+| `type_hierarchy(assembly_fragment, type_name)` | `list[str]` | Base chain followed by implemented interfaces. Unknown types return an empty list. |
+| `find_part_modules(query)` | `list[str]` | Module types instantiated on the active vessel, with assembly, count and sample part titles. Empty outside a loaded flight. |
+| `runtime_type_fingerprint(assembly_fragment, type_name)` | `str` | Stable member count and SHA-256 used to compare the loaded type with an offline index. |
+
+These calls establish that a member exists and what is loaded. They do not establish that
+the member is on the active behavior path or that using it improves a flight.
+
+---
+
+## `conn.ident`
+
+Stable KSP identities that kRPC's public `Vessel` and `Part` objects hold internally but
+do not expose. The service is available in flight scenes when SpaceCenter resolved.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `available` | `bool` | Whether the kRPC SpaceCenter service resolved. |
+| `ping()` | `str` | Returns `"pong"`. |
+| `part_flight_id(part)` | `str` | The part's KSP `flightID` as an exact decimal string. |
+| `part_flight_ids(parts)` | `list[str]` | One `flightID` per input part, preserving input order. |
+| `vessel_flight_ids(vessel)` | `list[str]` | All `flightID` values on a loaded vessel; an unloaded vessel returns an empty list. |
+| `vessel_ids(vessel)` | `str` | Tab-separated KSP `persistentId` and kRPC vessel Guid. |
+
+Use part `flightID` to address `conn.actuators`, to disambiguate otherwise identical side
+boosters, or to join OCISLY camera names. Use `persistentId` to join FMRS records to live
+kRPC vessel objects.
+
+---
+
+## `conn.actuators`
+
+Stock KSP actuator access used by the GNC S7 prototype. Reads are grouped so one call
+samples every engine or every gimbal on the active vessel. Commands use short leases:
+if the Python client stops renewing, the plugin restores the engine's previous fields
+within at most one second.
+
+| Member | Returns | Meaning |
+|---|---|---|
+| `available` | `bool` | Always `True` when the service loaded. |
+| `ping()` | `str` | Returns `"pong"`. |
+| `engine_sample()` | `list[float]` | Rows of 9 values: part `flight_id`, engine ordinal, ignited, realized throttle, realized thrust, max thrust, thrust limit, independent mode, independent percentage. |
+| `gimbal_sample()` | `list[float]` | Rows of 8 values: part `flight_id`, gimbal ordinal, locked, limiter, range, measured local X/Y/Z actuation in degrees. During a lease, response-speed limiting can make this lag the target. |
+| `thrust_direction_sample()` | `list[float]` | Rows of 5 values: part `flight_id`, engine ordinal, then unit direction X/Y/Z in the vessel frame (right, forward, bottom). Reads each current `ModuleEngines.thrustTransforms`, so it remains valid after a revert even when stock kRPC's cached `Thruster` wrapper is stale. |
+| `thrust_position_sample()` | `list[float]` | Rows of 5 values: part `flight_id`, engine ordinal, then the thrust-weighted lever X/Y/Z from the current centre of mass in the vessel frame. Prefer the per-transform v2 rows for exact multi-nozzle geometry. |
+| `lease_independent_throttle(flight_id, engine_ordinal, percentage, lease_seconds=0.25)` | `bool` | Gives one engine an absolute independent throttle for 0.05–1 s. Renew to continue. |
+| `release_independent_throttle(flight_id, engine_ordinal)` | `bool` | Restores the fields saved when that engine's first lease began. |
+| `lease_gimbal(flight_id, gimbal_ordinal, x_degrees, y_degrees, lease_seconds=0.25)` | `bool` | Directly commands one gimbal's local X/Y target for 0.05–1 s. Refuses a locked gimbal, clamps each direction to its installed KSP limits and preserves the configured response speed. Renew to continue. |
+| `release_gimbal(flight_id, gimbal_ordinal)` | `bool` | Restores the rotations and active state saved when that gimbal's first lease began. |
+| `release_all()` | `int` | Restores every active throttle and gimbal lease and returns the number restored. |
+| `protocol_version` | `int` | `2` for the atomic snapshot/control-frame protocol below. |
+| `control_snapshot_v2()` | `list[float]` | One coherent, timestamped snapshot containing all engines, gimbals and individual thrust transforms. |
+| `acquire_control(owner, lease_seconds=1)` | `str` | Acquires exclusive v2 engine/gimbal authority for 0.1–5 s and returns an opaque token. Existing legacy leases are restored during this explicit handover. |
+| `renew_control(token, lease_seconds=1)` | `bool` | Renews exclusive authority. It does not extend an actuator command: frames still need to be refreshed. |
+| `apply_control_frame(token, sequence, apply_tick, valid_until_tick, lease_seconds, engine_commands, gimbal_commands)` | `int` | Validates a complete frame and queues it for one `FixedUpdate`; returns its scheduled tick. |
+| `control_status_v2()` | `list[float]` | Ownership, queue, acknowledgement and result state described below. |
+| `release_control(token)` | `int` | Cancels the pending frame, restores all v2 actuator leases and releases authority. |
+
+`thrust_limit` and independent throttle are different controls. The former is a ceiling
+already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
+following the vessel's main throttle. S7 uses the second mechanism for differential
+thrust.
+
+`lease_gimbal()` does not merely write `ModuleGimbal.actuationLocal`: KSP would overwrite
+that field and the nozzle transforms in `ModuleGimbal.FixedUpdate`. The lease temporarily
+disables that stock calculation, applies the same installed-KSP transform formula with an
+absolute X/Y command, advances toward it with the installed response-speed rule, and
+reapplies it each physics tick. Expiry, explicit release, scene change and add-on
+destruction all restore the captured actuation, rotations and stock active state.
+This is actuator authority only; it is not evidence that a guidance law improves flight.
+
+### Atomic protocol v2
+
+`control_snapshot_v2()` has a 14-double header:
+
+| Offset | Meaning |
+|---:|---|
+| 0–7 | protocol version, physics tick, UT, fixed delta time, vessel persistent id, topology generation, last applied sequence, last result code |
+| 8–9 | engine row count and stride (`18`) |
+| 10–11 | gimbal row count and stride (`19`) |
+| 12–13 | thrust-transform row count and stride (`10`) |
+
+The three row sections immediately follow the header, in that order.
+
+An engine row is: `flight_id, ordinal, ignited, requested_throttle,
+current_throttle, final_thrust, max_thrust, thrust_percentage,
+independent_throttle, independent_percentage, finite_response,
+acceleration_speed, deceleration_speed, requested_mass_flow,
+propellant_requirement_met, real_isp, thrust_transform_count, leased`.
+
+A gimbal row is: `flight_id, ordinal, locked, stock_active, limiter, range,
+range_x_negative, range_x_positive, range_y_negative, range_y_positive,
+finite_response, response_speed, actual_x, actual_y, actual_z,
+transform_count, leased, target_x, target_y`.
+
+A thrust-transform row preserves the geometry that an engine-level average loses:
+`flight_id, engine_ordinal, transform_index, multiplier, lever_x, lever_y,
+lever_z, direction_x, direction_y, direction_z`. Lever and direction use the vessel
+frame (right, forward, bottom); the lever is measured from the current centre of mass.
+Unavailable transform geometry is represented by six `NaN` values, never plausible zeros.
+
+`apply_control_frame()` accepts engine rows of `flight_id, ordinal, percentage` and
+gimbal rows of `flight_id, ordinal, x_degrees, y_degrees`. All identifiers must be exact
+integers carried as doubles and no actuator may appear twice. `sequence` is strictly
+increasing for one authority token. Use `apply_tick=0` for the next observed physics tick
+and `valid_until_tick=0` for the same tick; explicitly scheduled frames are bounded to 250
+ticks ahead. The method only queues after every row has resolved and validated. The add-on
+then applies the whole frame from one `FixedUpdate` callback.
+
+`control_status_v2()` returns 11 doubles: `protocol, tick, topology_generation,
+owner_active, owner_ttl_seconds, pending_sequence, pending_tick,
+last_accepted_sequence, last_applied_sequence, result, last_applied_tick`.
+
+Result codes are `0` none, `1` queued, `2` applied, `-1` frame expired, `-2` authority
+lost/expired, `-3` topology or active vessel changed, `-4` unexpected application failure,
+and `-5` a queued frame was superseded. A topology change invalidates the token rather
+than applying commands addressed to stale part/module ordinals. While v2 authority is
+active, legacy per-actuator lease procedures reject commands so two control paths cannot
+silently fight.
+
+The part id is returned as a double in the flat samples because all KSP `uint` flight ids
+are exactly representable by a double. Pass it back as a decimal string to command or
+release a lease.
 
 ---
 
@@ -710,3 +849,93 @@ for node in vessel.control.nodes:             # ordinary kRPC nodes from here on
 if mj.maneuver_warning:
     print("MechJeb says:", mj.maneuver_warning)
 ```
+
+---
+
+## `conn.trajectories`
+
+Trajectories predicts where the active vessel hits the ground by integrating its descent
+through the stock aerodynamics — the drag cubes, at the vessel's *actual* attitude or at
+the descent profile you set. Stock kRPC has no impact prediction of any kind, and MechJeb's
+landing predictor only runs while its landing module is engaged; this one runs whenever you
+are in flight. It is a **witness, not an autopilot**: the prediction ignores thrust and
+answers "where do I land if I cut the engines now".
+
+**The first five members are frozen.** `available()`, `has_impact()`, `get_impact_geo()`,
+`get_impact_position()` and `get_time_till_impact()` keep the names, shapes and failure
+behaviour of the previous single-DLL bridge, because existing clients pin them. Note that
+`available()` is a *procedure* here — call it with parentheses — where every other
+service has a property of that name.
+
+| Member | Type | Notes |
+|---|---|---|
+| `available()` | `bool` | Mod installed and its API resolved. A procedure, not a property. |
+| `diagnostics` | `str` | What resolution found, member by member. |
+| `ping()` | `str` | |
+| `mod_version` | `str` | The Trajectories assembly version, e.g. `"2.4.5.4"`; empty when absent. |
+| `api_version` | `str` | What the mod's own API says, e.g. `"2.4.5"`. Raises when absent. |
+| `has_impact()` | `bool` | A prediction exists for the active vessel. Never raises. |
+| `get_impact_geo()` | `list[float]` | `[lat_deg, lon_deg, terrain_alt_m]` on the active vessel's main body. **Raises** `RuntimeError` when there is no impact — guard with `has_impact()`. |
+| `get_impact_position()` | `list[float]` | The mod's raw vector `[x, y, z]` in metres: relative to the main body's centre, world axes, rotated to where that surface point is *now*. Add the body's position for a world position. **Raises** when there is no impact. |
+| `get_time_till_impact()` | `float` | Seconds to impact, or `-1` if none. Never raises. |
+| `get_end_time()` | `float` | Universal time of the impact, or `-1`. |
+| `get_impact_velocity()` | `list[float]` | `[x, y, z]` m/s, world axes. **Empty list** if no impact. |
+| `update_trajectory()` | — | Ask for a recompute now. Lands on a later tick; does not block. |
+| `always_update` | `bool` r/w | Integrate even with the mod's window closed. The bridge turns it on at every flight-scene start so a headless script gets a live prediction. |
+| `has_target()` | `bool` | A landing target is set. |
+| `set_target(lat, lon, alt)` | — | Degrees on the active vessel's main body; pass `float('nan')` as the altitude to put it on the ground there. |
+| `clear_target()` | — | |
+| `get_target()` | `list[float]` | `[lat_deg, lon_deg, alt_m]`, or an empty list. |
+| `get_planned_direction()` | `list[float]` | The navball marker the mod draws for "fly this way to the target", `[x, y, z]` world axes. Empty list without a target. |
+| `get_corrected_direction()` | `list[float]` | Its second marker: the correction to bring the predicted impact onto the target. Empty list without a target. |
+| `get_descent_profile_angles()` | `list[float]` | Four angles in **degrees**: entry, high altitude, low altitude, final approach. |
+| `get_descent_profile_modes()` | `list[bool]` | Per node: `True` = the angle is an angle of attack, `False` = measured from the horizon. |
+| `get_descent_profile_grades()` | `list[bool]` | Per node: `True` = retrograde. |
+| `set_descent_profile(angles, modes, grades)` | — | All three lists of four, same order. `ValueError` on any other length. Degrees in. |
+| `reset_descent_profile(aoa_deg)` | — | All four nodes to one angle of attack. `0` = prograde, `180` = tail first; anything beyond 90 in magnitude is retrograde. |
+| `retrograde_entry` | `bool` r/w | All four nodes retrograde. Writing `True` resets the profile to retrograde at 0° AoA. |
+| `prograde_entry` | `bool` r/w | All four nodes prograde. Writing `True` resets to prograde at 0° AoA. |
+
+**Two conventions for "nothing to report", on purpose.** The two frozen vector members
+raise, as they always have, so the guard is `has_impact()`. Every *new* vector member
+returns an empty list and the two time members return `-1`, so a control loop can poll
+them without exceptions. A member the installed Trajectories does not have raises
+`RuntimeError: Trajectories.API.<name> absent (v2.4.5.4)` — never a `NullReferenceException`
+— and `diagnostics` lists every such member at once.
+
+**Angles are degrees here, radians in the mod.** `Trajectories.API` takes and returns
+radians for `ResetDescentProfile` and `DescentProfileAngles`; this service converts, so
+`reset_descent_profile(180)` is tail first. The mod's GUI shows degrees too.
+
+**Set the descent profile before you need the number.** The mod integrates the attitude it
+is told about, and by default that is the vessel's current one. A booster still pointed
+for its boostback is predicted as if it would fall nose-first all the way down, which is
+the wrong drag by a wide margin. One line at boot fixes it:
+
+```python
+tr = conn.trajectories
+if tr.available():
+    tr.reset_descent_profile(180)         # tail first, zero AoA, all four nodes
+    # or, with a trim: tr.set_descent_profile([180, 180, 175, 170], [True]*4, [True]*4)
+
+# later, in the loop
+if tr.has_impact():
+    lat, lon, alt = tr.get_impact_geo()
+    t = tr.get_time_till_impact()
+```
+
+**It has a cadence of its own.** The mod recomputes on its timer, not on each read, so the
+prediction can be one or two seconds old while the vessel is sweeping its impact point at
+hundreds of metres per second. `update_trajectory()` asks for a fresh one but the answer
+still arrives on a later tick. Read `get_time_till_impact()` with the position and you
+can tell two consecutive reads of the same computation apart from two computations.
+
+**Frames.** `get_impact_geo()` is the member to use: latitude and longitude are what
+`body.surface_position(lat, lon, frame)` on stock kRPC turns into any frame you like.
+`get_impact_position()` is the mod's own vector — body-relative, world axes, already
+rotated to the current position of that surface point — kept for clients that were already
+doing that sum themselves.
+
+**Why some of `Trajectories.API` is not here.** `GetSpaceOrbit()` returns a stock `Orbit`
+that kRPC's own `vessel.orbit` already gives you; the three split version numbers are
+folded into `api_version`.
