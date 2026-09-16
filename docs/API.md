@@ -366,6 +366,116 @@ The part id is returned as a double in the flat samples because all KSP `uint` f
 are exactly representable by a double. Pass it back as a decimal string to command or
 release a lease.
 
+### Dynamics protocol v3 (PDG2)
+
+`dynamics_snapshot_v3()` is a **read-only FixedUpdate snapshot** designed for the new PDG2
+planner. Unlike `control_snapshot_v2()`, it is captured automatically at the end of every
+`ActuatorsWatcher.FixedUpdate`, after any queued actuator frame and leased-gimbal update
+for that callback. The next frames therefore show the physical response to a known
+`last_applied_sequence` / `last_applied_tick` pair.
+
+The bridge keeps the latest 300 frames (about six seconds at 50 Hz). Use
+`dynamics_frames_v3(since_tick, max_frames)` to retrieve the ring without relying on the
+Python/RPC polling cadence. `max_frames` is clamped to 1–128. A topology or active-vessel
+change clears the ring rather than mixing incompatible actuator row layouts.
+
+The v3 snapshot starts with a 22-double header:
+
+| Offset | Meaning |
+|---:|---|
+| 0–1 | protocol (`3`) and schema (`1`) |
+| 2–6 | physics tick, UT, fixed delta time, vessel persistent id, topology generation |
+| 7–10 | last accepted sequence, last applied sequence, last applied tick, actuator result |
+| 11 | capability bit mask; absent quantities are `NaN`, never plausible zeros |
+| 12 | state stride (`67`) |
+| 13–14 | engine count / stride (`20`) |
+| 15–16 | gimbal count / stride (`19`) |
+| 17–18 | thrust-transform count / stride (`10`) |
+| 19–20 | history capacity and number of frames present before this capture |
+| 21 | capture phase (`0` = pre-integration state sampled from the FixedUpdate callback) |
+
+The 67-value state block immediately follows the header. Its fields, in order, are:
+
+```text
+position_world_xyz
+orbital_velocity_world_xyz
+surface_velocity_world_xyz
+surface_acceleration_derived_xyz
+orbital_acceleration_derived_xyz
+rotation_world_xyzw
+angular_velocity_world_xyz
+angular_acceleration_derived_xyz
+mass_tonnes
+com_world_xyz
+moi_native_xyz
+gravity_world_xyz
+atm_density
+static_pressure_kpa
+dynamic_pressure_kpa
+mach
+altitude_asl_m
+radar_altitude_m
+latitude_deg
+longitude_deg
+global_throttle
+aero_force_raw_xyz
+aero_torque_raw_xyz
+drag_vector_raw_xyz
+lift_vector_raw_xyz
+surface_speed_ms
+orbital_speed_ms
+gee_force_raw
+situation
+mission_time_s
+packed
+surface_velocity_reference_xyz
+aoa_raw
+sideslip_raw
+```
+
+Important unit rule: **KSP native force/mass units are kept where the stock module exposes
+them**. `mass_tonnes` is therefore tonnes and engine `final_thrust` / `max_thrust` are kN,
+which preserve the useful `kN / tonne = m/s²` relationship without a silent factor of
+1000. The aerodynamic/attitude fields obtained reflectively are not assumed present: the
+capability mask says which blocks resolved in this KSP build, and unresolved entries stay
+`NaN`. In particular, do not use `aoa_raw`, `sideslip_raw`, `aero_force_raw` or `aero_torque_raw`
+in a flight-critical model until the live probe has confirmed the installed build's field,
+frame and units. The `_raw` suffix is deliberate.
+
+The engine rows are:
+
+```text
+flight_id, ordinal, ignited, requested_throttle, current_throttle,
+final_thrust_kn, max_thrust_kn, thrust_percentage,
+independent_throttle, independent_percentage,
+finite_response, acceleration_speed, deceleration_speed,
+requested_mass_flow, propellant_requirement_met, real_isp_s,
+thrust_transform_count, leased, flameout, min_thrust_kn
+```
+
+The gimbal and thrust-transform row schemas are the same as protocol v2. This duplication
+is intentional: PDG2 can consume state and actuator realization from **one physics-tick
+frame**, instead of joining independently sampled RPCs later.
+
+`dynamics_frames_v3()` returns a six-value history header:
+
+```text
+protocol, schema, frame_count, oldest_tick, newest_tick, dropped_before
+```
+
+followed by `frame_length, frame_payload` for each returned v3 frame. `dropped_before=1`
+means the requested `since_tick` predates the oldest frame still in the ring.
+
+`dynamics_status_v3()` returns:
+
+```text
+protocol, schema, latest_tick, history_count, history_capacity,
+capability_mask, latest_applied_sequence, latest_applied_tick, actuator_result
+```
+
+`python/dynamics_v3.py` is the canonical dependency-free decoder for both RPCs. Keep the
+PDG2 code behind that decoder instead of hard-coding offsets in multiple places.
+
 ---
 
 ## `conn.fmrs`

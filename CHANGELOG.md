@@ -8,6 +8,22 @@ All notable changes to KRPC.Bridge. Format follows
 
 ### Added
 
+**Actuators Dynamics v3 — PDG2 FixedUpdate state/history**
+
+- `dynamics_snapshot_v3()` captures vessel dynamics and the complete actuator realization
+  in the same `ActuatorsWatcher.FixedUpdate` callback, including the control sequence and
+  tick that were just applied. Missing KSP fields are capability-gated `NaN`, never
+  fabricated values.
+- `dynamics_frames_v3()` exposes a 300-frame C# ring buffer so command → actuator → state
+  response can be identified from physics ticks rather than Python RPC arrival times.
+- Position/velocities, finite-difference accelerations, attitude/angular state, mass/CoM,
+  gravity, atmosphere/navigation scalars, engine/gimbal state and exact per-nozzle
+  geometry are carried in one versioned flat schema. `python/dynamics_v3.py` is the
+  canonical decoder.
+- `dynamics_status_v3()` exposes the latest tick, ring fill, capability mask and applied
+  actuator sequence without transferring a full frame. `python/check_bridge.py` now smoke
+  tests the v3 shape and history RPC.
+
 **Actuators v2 — coherent snapshots and atomic control frames**
 
 - `control_snapshot_v2()` captures engines, gimbals and every thrust transform in one

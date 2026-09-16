@@ -149,6 +149,10 @@ namespace KRPC.Bridge.Actuators
             for (int i = 0; i < expiredGimbals.Count; i++)
                 RestoreGimbal (expiredGimbals [i]);
 
+            DynamicsV3.Capture (
+                vessel, physicsTick, topologyGeneration,
+                lastAcceptedSequence, lastAppliedSequence,
+                lastAppliedTick, lastResult);
         }
 
         internal static void RequireLegacyControlAvailable ()
@@ -375,6 +379,7 @@ namespace KRPC.Bridge.Actuators
                 observedVesselId = Guid.Empty;
                 observedTopologyHash = 0;
                 lastSnapshot = new List<double> ();
+                DynamicsV3.Reset ();
                 return;
             }
             ulong hash = ComputeTopologyHash (vessel);
@@ -387,6 +392,7 @@ namespace KRPC.Bridge.Actuators
             observedVesselId = vessel.id;
             observedTopologyHash = hash;
             lastSnapshot = new List<double> ();
+            DynamicsV3.Reset ();
         }
 
         static ulong ComputeTopologyHash (Vessel vessel)
@@ -616,6 +622,7 @@ namespace KRPC.Bridge.Actuators
             observedVesselId = Guid.Empty;
             observedTopologyHash = 0;
             lastSnapshot = new List<double> ();
+            DynamicsV3.Reset ();
         }
 
         internal static void Command (ModuleEngines engine, float percentage, float leaseSeconds)

@@ -118,6 +118,30 @@ def main() -> int:
         else:
             line("atomic protocol v2", "not deployed")
 
+        if hasattr(conn.actuators, "dynamics_snapshot_v3"):
+            dyn = conn.actuators.dynamics_snapshot_v3()
+            if not dyn:
+                line("dynamics protocol v3", "waiting for first FixedUpdate")
+            elif len(dyn) < 22:
+                line("dynamics protocol v3", "INVALID header")
+            else:
+                expected = (22 + int(dyn[12])
+                            + int(dyn[13]) * int(dyn[14])
+                            + int(dyn[15]) * int(dyn[16])
+                            + int(dyn[17]) * int(dyn[18]))
+                line("dynamics protocol v3", f"{int(dyn[0])}.{int(dyn[1])}")
+                line("dynamics tick", int(dyn[2]))
+                line("dynamics capabilities", hex(int(dyn[11])))
+                line("dynamics history", f"{int(dyn[20])}/{int(dyn[19])}")
+                line("dynamics shape",
+                     "ok" if len(dyn) == expected
+                     else f"INVALID {len(dyn)} != {expected}")
+                hist = conn.actuators.dynamics_frames_v3(max(0, int(dyn[2]) - 4), 8)
+                line("dynamics history RPC",
+                     f"{int(hist[2])} frame(s)" if len(hist) >= 6 else "INVALID")
+        else:
+            line("dynamics protocol v3", "not deployed")
+
     # 3. FMRS.
     print("\nFMRS")
     line("available", conn.fmrs.available)
