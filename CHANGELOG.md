@@ -1,3 +1,23 @@
+# Unreleased — DynamicsSnapshotV3 schema 2 / PDG2 observability
+
+- Fixed Dynamics V3.2 realized engine wrench sign: `engine_force_*` now reports the reaction force applied to the vessel (`-thrustTransform.forward`), and capability bit 30 (`realized_engine_force_on_vessel`) marks the corrected semantics. This also fixes the sign of `external_force_residual` / `unexplained_non_aero_force` during powered flight.
+- `conn.actuators.dynamics_snapshot_v3()` now emits protocol `3.2` while preserving the
+  complete 67-value schema-1 state prefix and all actuator row layouts.
+- Added same-tick realized engine force/torque in body and world frames, computed from
+  `ModuleEngines.finalThrust` and current per-nozzle thrust transforms.
+- Added canonical live aerodynamic force/torque from kRPC 0.6 SpaceCenter `Flight`, plus
+  lift, drag, reconstructed side force, q/static pressure/density/speed of sound/TAS and
+  AoA/sideslip.
+- Added inertial translational `external_force_residual` and the diagnostic
+  `unexplained_non_aero_force = residual - live_aero_force`. No torque residual is
+  published yet because variable inertia requires a more careful derivation.
+- Added capability bits 22–29 and extended `python/dynamics_v3.py` to decode both schema
+  1 and schema 2, preserving historical log replay.
+- `python/check_bridge.py` now prints human-readable V3.2 capabilities and live norms for
+  realized engine/aero wrench and residuals.
+- Actuators now references kRPC's built-in `KRPC.SpaceCenter.dll`; verify stubs were
+  extended accordingly. No actuator command behavior or flight guidance was changed.
+
 # Changelog
 
 All notable changes to KRPC.Bridge. Format follows
@@ -232,3 +252,7 @@ that was verified against the mod's source but never exposed.
 - `LICENSE` (MIT) and `NOTICE` recording that the mod links against kRPC (LGPL v3) using
   the player's own copy, and reaches FMRS, MechJeb, OCISLY and HullcamVDS purely by
   reflection with nothing redistributed.
+
+### DynamicsSnapshotV3 3.2a
+- Fix `build.cmd verify` compatibility with Unity verification stubs without changing the 3.2 schema or runtime behavior.
+- Replace unsupported verifier helpers/operators with explicit vector math.

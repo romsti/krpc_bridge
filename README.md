@@ -301,3 +301,11 @@ This mod ships only its own assemblies. It links against kRPC (LGPL v3, Copyrigh
 (MIT), MechJeb 2 (GPL-3.0), OCISLY and HullcamVDS Continued (GPL-3.0) and Trajectories
 (GPL-3.0) purely by reflection — no compile-time reference, no copied code, nothing
 redistributed. Thanks to their authors and maintainers.
+
+
+### PDG2 DynamicsSnapshotV3 schema 3.2
+
+The Actuators service now provides an append-only Dynamics V3.2 snapshot with same-tick
+realized engine wrench, official kRPC live aerodynamic wrench/telemetry, and translational
+external-force residuals. Historical schema-1 frames remain supported by the bundled
+Python decoder. See `docs/API.md` and `PDG2_DYNAMICS_V3_NOTES.md`.

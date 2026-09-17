@@ -10,11 +10,14 @@ from typing import Iterable, Sequence
 import math
 
 PROTOCOL_VERSION = 3
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMAS = (1, 2)
 HEADER_STRIDE = 22
-STATE_STRIDE = 67
+STATE_STRIDE_V1 = 67
+STATE_STRIDE_V2 = 116
+STATE_STRIDE = STATE_STRIDE_V2
 
-STATE_FIELDS = (
+STATE_FIELDS_V1 = (
     "position_world_x", "position_world_y", "position_world_z",
     "orbital_velocity_world_x", "orbital_velocity_world_y", "orbital_velocity_world_z",
     "surface_velocity_world_x", "surface_velocity_world_y", "surface_velocity_world_z",
@@ -40,6 +43,36 @@ STATE_FIELDS = (
     "surface_velocity_reference_z", "aoa_raw", "sideslip_raw",
 )
 
+STATE_FIELDS_V2_EXTRA = (
+    "engine_force_body_n_x", "engine_force_body_n_y", "engine_force_body_n_z",
+    "engine_force_world_n_x", "engine_force_world_n_y", "engine_force_world_n_z",
+    "engine_torque_body_nm_x", "engine_torque_body_nm_y", "engine_torque_body_nm_z",
+    "engine_torque_world_nm_x", "engine_torque_world_nm_y", "engine_torque_world_nm_z",
+    "aero_force_body_n_x", "aero_force_body_n_y", "aero_force_body_n_z",
+    "aero_force_world_n_x", "aero_force_world_n_y", "aero_force_world_n_z",
+    "aero_torque_body_nm_x", "aero_torque_body_nm_y", "aero_torque_body_nm_z",
+    "aero_torque_world_nm_x", "aero_torque_world_nm_y", "aero_torque_world_nm_z",
+    "aero_lift_body_n_x", "aero_lift_body_n_y", "aero_lift_body_n_z",
+    "aero_drag_body_n_x", "aero_drag_body_n_y", "aero_drag_body_n_z",
+    "aero_side_force_body_n_x", "aero_side_force_body_n_y", "aero_side_force_body_n_z",
+    "dynamic_pressure_pa", "static_pressure_pa", "atmosphere_density_kg_m3",
+    "speed_of_sound_ms", "true_air_speed_ms", "aoa_deg", "sideslip_deg",
+    "external_force_residual_world_n_x", "external_force_residual_world_n_y",
+    "external_force_residual_world_n_z",
+    "external_force_residual_body_n_x", "external_force_residual_body_n_y",
+    "external_force_residual_body_n_z",
+    "unexplained_non_aero_force_world_n_x",
+    "unexplained_non_aero_force_world_n_y",
+    "unexplained_non_aero_force_world_n_z",
+)
+
+STATE_FIELDS_BY_SCHEMA = {
+    1: STATE_FIELDS_V1,
+    2: STATE_FIELDS_V1 + STATE_FIELDS_V2_EXTRA,
+}
+STATE_STRIDE_BY_SCHEMA = {k: len(v) for k, v in STATE_FIELDS_BY_SCHEMA.items()}
+STATE_FIELDS = STATE_FIELDS_BY_SCHEMA[SCHEMA_VERSION]
+
 CAPABILITIES = {
     0: "position",
     1: "orbital_velocity",
@@ -63,6 +96,15 @@ CAPABILITIES = {
     19: "sideslip",
     20: "global_throttle",
     21: "actuators",
+    22: "realized_engine_wrench",
+    23: "krpc_live_aero_force",
+    24: "krpc_live_aero_torque",
+    25: "krpc_live_aero_components",
+    26: "krpc_aero_angles",
+    27: "krpc_aero_thermo",
+    28: "external_force_residual",
+    29: "unexplained_non_aero_force",
+    30: "realized_engine_force_on_vessel",
 }
 
 ENGINE_FIELDS = (
@@ -108,15 +150,19 @@ def decode_snapshot(values: Sequence[float]) -> dict:
         raise ValueError(f"DynamicsSnapshotV3 header truncated: {len(values)}")
     if int(values[0]) != PROTOCOL_VERSION:
         raise ValueError(f"unsupported Dynamics protocol {values[0]}")
-    if int(values[1]) != SCHEMA_VERSION:
+    schema = int(values[1])
+    if schema not in SUPPORTED_SCHEMAS:
         raise ValueError(f"unsupported Dynamics schema {values[1]}")
 
     state_stride = int(values[12])
     engine_count, engine_stride = int(values[13]), int(values[14])
     gimbal_count, gimbal_stride = int(values[15]), int(values[16])
     transform_count, transform_stride = int(values[17]), int(values[18])
-    if state_stride != STATE_STRIDE:
-        raise ValueError(f"state stride {state_stride} != decoder {STATE_STRIDE}")
+    expected_state_stride = STATE_STRIDE_BY_SCHEMA[schema]
+    if state_stride != expected_state_stride:
+        raise ValueError(
+            f"state stride {state_stride} != decoder schema {schema} stride "
+            f"{expected_state_stride}")
     if engine_stride != len(ENGINE_FIELDS):
         raise ValueError(f"engine stride {engine_stride} != decoder {len(ENGINE_FIELDS)}")
     if gimbal_stride != len(GIMBAL_FIELDS):
@@ -138,7 +184,7 @@ def decode_snapshot(values: Sequence[float]) -> dict:
     mask = int(values[11])
     return {
         "protocol": int(values[0]),
-        "schema": int(values[1]),
+        "schema": schema,
         "physics_tick": int(values[2]),
         "ut": values[3],
         "physics_dt": values[4],
@@ -153,7 +199,7 @@ def decode_snapshot(values: Sequence[float]) -> dict:
         "history_capacity": int(values[19]),
         "history_count_before_capture": int(values[20]),
         "capture_phase": int(values[21]),
-        "state": dict(zip(STATE_FIELDS, state_values)),
+        "state": dict(zip(STATE_FIELDS_BY_SCHEMA[schema], state_values)),
         "engines": engines,
         "gimbals": gimbals,
         "thrust_transforms": transforms,
@@ -166,8 +212,9 @@ def decode_history(values: Sequence[float]) -> dict:
         return {"frames": []}
     if len(values) < 6:
         raise ValueError("DynamicsFramesV3 header truncated")
-    if int(values[0]) != PROTOCOL_VERSION or int(values[1]) != SCHEMA_VERSION:
+    if int(values[0]) != PROTOCOL_VERSION or int(values[1]) not in SUPPORTED_SCHEMAS:
         raise ValueError("unsupported DynamicsFramesV3 protocol/schema")
+    schema = int(values[1])
     frame_count = int(values[2])
     i = 6
     frames = []
@@ -183,7 +230,7 @@ def decode_history(values: Sequence[float]) -> dict:
         raise ValueError(f"unexpected DynamicsFramesV3 tail: {len(values)-i} doubles")
     return {
         "protocol": int(values[0]),
-        "schema": int(values[1]),
+        "schema": schema,
         "frame_count": frame_count,
         "oldest_tick": int(values[3]),
         "newest_tick": int(values[4]),

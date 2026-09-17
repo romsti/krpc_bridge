@@ -12,6 +12,12 @@ Nothing here jumps, recovers or touches the flight. It only reads.
 from __future__ import annotations
 
 import sys
+import math
+
+try:
+    from dynamics_v3 import decode_snapshot
+except ImportError:
+    decode_snapshot = None
 
 try:
     import krpc
@@ -34,6 +40,13 @@ def _safe(read, default):
         return read()
     except (RuntimeError, ValueError):
         return default
+
+
+def _norm3(state: dict, prefix: str):
+    vals = [state.get(prefix + axis, float("nan")) for axis in ("x", "y", "z")]
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in vals):
+        return None
+    return math.sqrt(sum(float(v) * float(v) for v in vals))
 
 
 def main() -> int:
@@ -139,6 +152,34 @@ def main() -> int:
                 hist = conn.actuators.dynamics_frames_v3(max(0, int(dyn[2]) - 4), 8)
                 line("dynamics history RPC",
                      f"{int(hist[2])} frame(s)" if len(hist) >= 6 else "INVALID")
+
+                if int(dyn[1]) >= 2 and decode_snapshot is not None:
+                    try:
+                        decoded = decode_snapshot(dyn)
+                        st = decoded["state"]
+                        line("dynamics capability names",
+                             ", ".join(sorted(decoded["capabilities"])))
+                        for label, prefix, unit in (
+                            ("engine force realized", "engine_force_body_n_", "N"),
+                            ("engine torque realized", "engine_torque_body_nm_", "N.m"),
+                            ("aero force live", "aero_force_body_n_", "N"),
+                            ("aero torque live", "aero_torque_body_nm_", "N.m"),
+                            ("external force residual",
+                             "external_force_residual_world_n_", "N"),
+                            ("unexplained non-aero",
+                             "unexplained_non_aero_force_world_n_", "N"),
+                        ):
+                            norm = _norm3(st, prefix)
+                            line(label, f"{norm:.3f} {unit}" if norm is not None else "NA")
+                        q = st.get("dynamic_pressure_pa")
+                        aoa = st.get("aoa_deg")
+                        beta = st.get("sideslip_deg")
+                        line("aero q / AoA / beta",
+                             (f"{q:.1f} Pa / {aoa:.3f} deg / {beta:.3f} deg"
+                              if all(isinstance(v, (int, float)) and math.isfinite(v)
+                                     for v in (q, aoa, beta)) else "NA"))
+                    except Exception as exc:
+                        line("dynamics v3.2 decode", f"ERROR: {exc}")
         else:
             line("dynamics protocol v3", "not deployed")
 

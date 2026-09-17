@@ -368,33 +368,46 @@ release a lease.
 
 ### Dynamics protocol v3 (PDG2)
 
-`dynamics_snapshot_v3()` is a **read-only FixedUpdate snapshot** designed for the new PDG2
-planner. Unlike `control_snapshot_v2()`, it is captured automatically at the end of every
-`ActuatorsWatcher.FixedUpdate`, after any queued actuator frame and leased-gimbal update
-for that callback. The next frames therefore show the physical response to a known
-`last_applied_sequence` / `last_applied_tick` pair.
+`dynamics_snapshot_v3()` is a **read-only FixedUpdate snapshot** designed for PDG2 and
+for the common BB/flip/coast system-identification path. Unlike `control_snapshot_v2()`,
+it is captured automatically at the end of every `ActuatorsWatcher.FixedUpdate`, after
+any queued actuator frame and leased-gimbal update for that callback. The next frames
+therefore show the physical response to a known `last_applied_sequence` /
+`last_applied_tick` pair.
 
 The bridge keeps the latest 300 frames (about six seconds at 50 Hz). Use
 `dynamics_frames_v3(since_tick, max_frames)` to retrieve the ring without relying on the
 Python/RPC polling cadence. `max_frames` is clamped to 1–128. A topology or active-vessel
 change clears the ring rather than mixing incompatible actuator row layouts.
 
-The v3 snapshot starts with a 22-double header:
+#### Wire compatibility
+
+The protocol remains **3**. Schema **2** is an append-only extension of schema 1:
+
+- the 22-value header is unchanged;
+- the first 67 state values are byte-for-byte the schema-1 layout;
+- engine/gimbal/thrust-transform row formats are unchanged;
+- schema 2 appends 49 canonical SI dynamics values and raises state stride to `116`.
+
+`python/dynamics_v3.py` decodes both schema 1 and schema 2, so historical V3.1 logs remain
+usable in the same replay tooling.
+
+The snapshot starts with a 22-double header:
 
 | Offset | Meaning |
 |---:|---|
-| 0–1 | protocol (`3`) and schema (`1`) |
+| 0–1 | protocol (`3`) and schema (`2` for current builds) |
 | 2–6 | physics tick, UT, fixed delta time, vessel persistent id, topology generation |
 | 7–10 | last accepted sequence, last applied sequence, last applied tick, actuator result |
 | 11 | capability bit mask; absent quantities are `NaN`, never plausible zeros |
-| 12 | state stride (`67`) |
+| 12 | state stride (`116` in schema 2; `67` in schema 1) |
 | 13–14 | engine count / stride (`20`) |
 | 15–16 | gimbal count / stride (`19`) |
 | 17–18 | thrust-transform count / stride (`10`) |
 | 19–20 | history capacity and number of frames present before this capture |
 | 21 | capture phase (`0` = pre-integration state sampled from the FixedUpdate callback) |
 
-The 67-value state block immediately follows the header. Its fields, in order, are:
+#### Schema-1 prefix: offsets 0–66 of the state block
 
 ```text
 position_world_xyz
@@ -433,14 +446,89 @@ aoa_raw
 sideslip_raw
 ```
 
-Important unit rule: **KSP native force/mass units are kept where the stock module exposes
-them**. `mass_tonnes` is therefore tonnes and engine `final_thrust` / `max_thrust` are kN,
-which preserve the useful `kN / tonne = m/s²` relationship without a silent factor of
-1000. The aerodynamic/attitude fields obtained reflectively are not assumed present: the
-capability mask says which blocks resolved in this KSP build, and unresolved entries stay
-`NaN`. In particular, do not use `aoa_raw`, `sideslip_raw`, `aero_force_raw` or `aero_torque_raw`
-in a flight-critical model until the live probe has confirmed the installed build's field,
-frame and units. The `_raw` suffix is deliberate.
+These values preserve the V3.1 native-KSP contract. `mass_tonnes` is tonnes and engine
+`final_thrust_kn` / `max_thrust_kn` are kN, retaining the convenient
+`kN / tonne = m/s²` relationship. The `_raw` aerodynamic fields remain best-effort
+reflection probes and should not be used by new flight-critical code.
+
+#### Schema-2 extension: offsets 67–115 of the state block
+
+All forces/torques in this block are canonical SI quantities. The body frame is the
+vessel frame used elsewhere by the bridge: **X right, Y forward, Z bottom**.
+
+| State offset(s) | Field | Unit / notes |
+|---:|---|---|
+| 67–69 | `engine_force_body` | N |
+| 70–72 | `engine_force_world` | N |
+| 73–75 | `engine_torque_body` | N·m about current CoM |
+| 76–78 | `engine_torque_world` | N·m about current CoM |
+| 79–81 | `aero_force_body` | N, official kRPC live `Flight.AerodynamicForce` |
+| 82–84 | `aero_force_world` | N |
+| 85–87 | `aero_torque_body` | N·m, official kRPC live `Flight.AerodynamicTorque` |
+| 88–90 | `aero_torque_world` | N·m |
+| 91–93 | `aero_lift_body` | N |
+| 94–96 | `aero_drag_body` | N |
+| 97–99 | `aero_side_force_body` | N, reconstructed exactly as total − lift − drag |
+| 100 | `dynamic_pressure_pa` | Pa |
+| 101 | `static_pressure_pa` | Pa |
+| 102 | `atmosphere_density_kg_m3` | kg/m³ |
+| 103 | `speed_of_sound_ms` | m/s |
+| 104 | `true_air_speed_ms` | m/s |
+| 105 | `aoa_deg` | degrees |
+| 106 | `sideslip_deg` | degrees |
+| 107–109 | `external_force_residual_world` | N |
+| 110–112 | `external_force_residual_body` | N |
+| 113–115 | `unexplained_non_aero_force_world` | N |
+
+The realized engine wrench is computed from each live `ModuleEngines.finalThrust` and its
+current `thrustTransforms`, distributing total engine thrust by the stock transform
+multipliers. KSP thrust transforms point along the exhaust/nozzle direction; the realized
+force exported here is the reaction force applied to the vessel, i.e. `-transform.forward`. The per-nozzle force and current CoM give
+`r × F` for the realized engine torque. This uses the same live nozzle geometry exposed by
+the actuator snapshot, including engines that have more than one thrust transform.
+
+The translational residual is deliberately named **external force residual**, not
+`aero_force`:
+
+```text
+F_external = m * (a_orbital_derived - g) - F_engine
+```
+
+It is valid only after two consecutive physics ticks provide the inertial velocity
+derivative. It can contain aerodynamics, RCS/contact/joint forces, and measurement/frame
+error. When official live aerodynamic force is also available the bridge additionally
+publishes:
+
+```text
+F_unexplained_non_aero = F_external - F_aero_live
+```
+
+That last signal is a diagnostic for missing force providers or a frame/sign/model error;
+it is **not** assumed to be zero in all KSP situations.
+
+A torque residual is intentionally not published yet. With changing mass distribution a
+naive `I*omega_dot + omega×I*omega` residual can be misleading unless `dI/dt` and the
+other torque providers are accounted for.
+
+#### Capability bits
+
+The legacy V3.1 bits 0–21 are unchanged. Schema 2 adds:
+
+```text
+22 realized_engine_wrench
+23 krpc_live_aero_force
+24 krpc_live_aero_torque
+25 krpc_live_aero_components
+26 krpc_aero_angles
+27 krpc_aero_thermo
+28 external_force_residual
+29 unexplained_non_aero_force
+30 realized_engine_force_on_vessel
+```
+
+A capability bit is the authority; a `NaN` is never silently converted to zero. In
+particular, live aerodynamic torque may be unavailable with an aerodynamic overhaul that
+does not expose the corresponding live quantity.
 
 The engine rows are:
 
@@ -473,8 +561,8 @@ protocol, schema, latest_tick, history_count, history_capacity,
 capability_mask, latest_applied_sequence, latest_applied_tick, actuator_result
 ```
 
-`python/dynamics_v3.py` is the canonical dependency-free decoder for both RPCs. Keep the
-PDG2 code behind that decoder instead of hard-coding offsets in multiple places.
+`python/dynamics_v3.py` is the canonical dependency-free decoder for both RPCs. Keep BB,
+coast and PDG2 behind that decoder instead of hard-coding offsets in multiple places.
 
 ---
 

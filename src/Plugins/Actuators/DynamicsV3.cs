@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using KRPC.Service.Attributes;
+using SCFlight = KRPC.SpaceCenter.Services.Flight;
+using SCVessel = KRPC.SpaceCenter.Services.Vessel;
 using UnityEngine;
 
 namespace KRPC.Bridge.Actuators
@@ -63,9 +65,12 @@ namespace KRPC.Bridge.Actuators
     internal static class DynamicsV3
     {
         internal const int ProtocolVersion = 3;
-        internal const int SchemaVersion = 1;
+        internal const int SchemaVersion = 2;
         internal const int HeaderStride = 22;
-        internal const int StateStride = 67;
+        // Schema 3.2 appends canonical SI realized/aero/residual quantities to the
+        // untouched 67-value 3.1 state prefix. Old logs therefore remain decodable.
+        internal const int StateStrideV31 = 67;
+        internal const int StateStride = 116;
         internal const int EngineStride = 20;
         internal const int GimbalStride = 19;
         internal const int TransformStride = 10;
@@ -94,6 +99,15 @@ namespace KRPC.Bridge.Actuators
         const long CapSideslip = 1L << 19;
         const long CapGlobalThrottle = 1L << 20;
         const long CapActuators = 1L << 21;
+        const long CapRealizedEngineWrench = 1L << 22;
+        const long CapKrpcLiveAeroForce = 1L << 23;
+        const long CapKrpcLiveAeroTorque = 1L << 24;
+        const long CapKrpcLiveAeroComponents = 1L << 25;
+        const long CapKrpcAeroAngles = 1L << 26;
+        const long CapKrpcAeroThermo = 1L << 27;
+        const long CapExternalForceResidual = 1L << 28;
+        const long CapUnexplainedNonAeroForce = 1L << 29;
+        const long CapRealizedEngineForceOnVessel = 1L << 30;
 
         static readonly LinkedList<double[]> history = new LinkedList<double[]> ();
         static readonly Dictionary<string, MemberInfo> memberCache =
@@ -107,6 +121,13 @@ namespace KRPC.Bridge.Actuators
         static int latestAppliedSequence;
         static long latestAppliedTick;
         static int latestResult;
+
+        // kRPC SpaceCenter wrapper used only to read the official 0.6.x Flight
+        // live-aerodynamics API in the same FixedUpdate as the native state.
+        // Reused across ticks to avoid a pair of wrapper allocations at 50 Hz.
+        static Vessel serviceInternalVessel;
+        static SCVessel serviceVessel;
+        static SCFlight serviceFlightBody;
 
         static bool havePrevious;
         static long previousTick;
@@ -123,6 +144,9 @@ namespace KRPC.Bridge.Actuators
             latestAppliedSequence = 0;
             latestAppliedTick = 0;
             latestResult = 0;
+            serviceInternalVessel = null;
+            serviceVessel = null;
+            serviceFlightBody = null;
             havePrevious = false;
             previousTick = 0;
         }
@@ -347,6 +371,76 @@ namespace KRPC.Bridge.Actuators
                     new[] { "sideslipAngle", "sideslip", "beta" }))
                 capabilities |= CapSideslip;
 
+            // -------------------------------------- canonical kRPC 0.6 live aero
+            // The 3.1 raw reflection fields above are kept byte-for-byte for wire
+            // compatibility. 3.2 uses SpaceCenter.Flight: those values have explicit
+            // SI units and the vessel body reference frame (right, forward, bottom).
+            double[] aeroForceBody = null;
+            double[] aeroTorqueBody = null;
+            double[] aeroLiftBody = null;
+            double[] aeroDragBody = null;
+            double[] aeroSideBody = null;
+            SCFlight flightBody = GetBodyFlight (vessel);
+            if (flightBody != null) {
+                bool haveAeroForce = TryTuple3 (() => flightBody.AerodynamicForce, out aeroForceBody);
+                bool haveAeroTorque = TryTuple3 (() => flightBody.AerodynamicTorque, out aeroTorqueBody);
+                if (haveAeroForce)
+                    capabilities |= CapKrpcLiveAeroForce;
+                if (haveAeroTorque)
+                    capabilities |= CapKrpcLiveAeroTorque;
+
+                bool haveLift = TryTuple3 (() => flightBody.Lift, out aeroLiftBody);
+                bool haveDrag = TryTuple3 (() => flightBody.Drag, out aeroDragBody);
+                // kRPC 0.6.0 exposes total force, lift and drag. Side-force is
+                // reconstructed as the exact remainder so the bridge does not take
+                // a compile-time dependency on a newer client surface.
+                if (haveAeroForce && haveLift && haveDrag) {
+                    aeroSideBody = new[] {
+                        aeroForceBody [0] - aeroLiftBody [0] - aeroDragBody [0],
+                        aeroForceBody [1] - aeroLiftBody [1] - aeroDragBody [1],
+                        aeroForceBody [2] - aeroLiftBody [2] - aeroDragBody [2]
+                    };
+                    capabilities |= CapKrpcLiveAeroComponents;
+                }
+
+                double scalar;
+                bool haveAngles = false;
+                if (TryScalar (() => flightBody.AngleOfAttack, out scalar)) {
+                    state [105] = scalar;
+                    haveAngles = true;
+                }
+                if (TryScalar (() => flightBody.SideslipAngle, out scalar)) {
+                    state [106] = scalar;
+                    haveAngles = true;
+                }
+                if (haveAngles)
+                    capabilities |= CapKrpcAeroAngles;
+
+                bool haveThermo = false;
+                if (TryScalar (() => flightBody.DynamicPressure, out scalar)) {
+                    state [100] = scalar;
+                    haveThermo = true;
+                }
+                if (TryScalar (() => flightBody.StaticPressure, out scalar)) {
+                    state [101] = scalar;
+                    haveThermo = true;
+                }
+                if (TryScalar (() => flightBody.AtmosphereDensity, out scalar)) {
+                    state [102] = scalar;
+                    haveThermo = true;
+                }
+                if (TryScalar (() => flightBody.SpeedOfSound, out scalar)) {
+                    state [103] = scalar;
+                    haveThermo = true;
+                }
+                if (TryScalar (() => flightBody.TrueAirSpeed, out scalar)) {
+                    state [104] = scalar;
+                    haveThermo = true;
+                }
+                if (haveThermo)
+                    capabilities |= CapKrpcAeroThermo;
+            }
+
             // --------------------------------------------------- actionuator state
             var engines = new List<double> ();
             var gimbals = new List<double> ();
@@ -355,6 +449,11 @@ namespace KRPC.Bridge.Actuators
             int gimbalCount = 0;
             int transformCount = 0;
             var reference = vessel.ReferenceTransform;
+            Vector3 realizedEngineForceBody = Vector3.zero;
+            Vector3 realizedEngineTorqueBody = Vector3.zero;
+            Vector3 realizedEngineForceWorld = Vector3.zero;
+            Vector3 realizedEngineTorqueWorld = Vector3.zero;
+            bool haveRealizedEngineWrench = reference != null;
 
             for (int p = 0; p < vessel.parts.Count; p++) {
                 var part = vessel.parts [p];
@@ -389,12 +488,49 @@ namespace KRPC.Bridge.Actuators
                         engines.Add (ReadDoubleOrNaN (engine, new[] { "minThrust" }));
                         engineCount++;
 
+                        // ModuleEngines.finalThrust is the engine total (kN). Split it
+                        // across its thrust transforms according to the stock multiplier
+                        // weights, preserving a negative multiplier as a direction flip.
+                        double multiplierWeightSum = 0.0;
+                        for (int tw = 0; tw < ownTransformCount; tw++) {
+                            double mw = 1.0;
+                            if (engine.thrustTransformMultipliers != null &&
+                                    tw < engine.thrustTransformMultipliers.Count)
+                                mw = engine.thrustTransformMultipliers [tw];
+                            multiplierWeightSum += Math.Abs (mw);
+                        }
+                        if (Math.Abs (engine.finalThrust) > 1e-9 &&
+                                (ownTransformCount == 0 || multiplierWeightSum <= 1e-12))
+                            haveRealizedEngineWrench = false;
+
                         for (int t = 0; t < ownTransformCount; t++) {
                             var transform = engine.thrustTransforms [t];
                             float multiplier = 1f;
                             if (engine.thrustTransformMultipliers != null &&
                                     t < engine.thrustTransformMultipliers.Count)
                                 multiplier = engine.thrustTransformMultipliers [t];
+
+                            if (transform != null && reference != null &&
+                                    multiplierWeightSum > 1e-12) {
+                                double signedWeight = multiplier / multiplierWeightSum;
+                                float nozzleForceN = (float)(
+                                    engine.finalThrust * 1000.0 * signedWeight);
+                                // KSP thrustTransforms point along the exhaust/nozzle direction.
+                                // The force applied to the vessel is the reaction force, i.e.
+                                // opposite transform.forward. Keep the raw transform geometry
+                                // unchanged elsewhere; only the realized wrench uses vessel force.
+                                Vector3 forceWorld = -nozzleForceN * transform.forward.normalized;
+                                Vector3 leverWorld = transform.position - com;
+                                Vector3 forceBody = reference.InverseTransformDirection (forceWorld);
+                                Vector3 leverBody = reference.InverseTransformDirection (leverWorld);
+                                realizedEngineForceWorld += forceWorld;
+                                realizedEngineTorqueWorld += Cross3 (leverWorld, forceWorld);
+                                realizedEngineForceBody += forceBody;
+                                realizedEngineTorqueBody += Cross3 (leverBody, forceBody);
+                            } else if (ownTransformCount > 0) {
+                                haveRealizedEngineWrench = false;
+                            }
+
                             transforms.Add (part.flightID);
                             transforms.Add (engineOrdinal);
                             transforms.Add (t);
@@ -451,6 +587,65 @@ namespace KRPC.Bridge.Actuators
                 }
             }
             capabilities |= CapActuators;
+
+            // ---------------------------------------------------- schema 3.2 extension
+            if (haveRealizedEngineWrench) {
+                Set3 (state, 67, realizedEngineForceBody);
+                Set3 (state, 70, realizedEngineForceWorld);
+                Set3 (state, 73, realizedEngineTorqueBody);
+                Set3 (state, 76, realizedEngineTorqueWorld);
+                capabilities |= CapRealizedEngineWrench;
+                capabilities |= CapRealizedEngineForceOnVessel;
+            }
+
+            double[] aeroForceWorld = BodyToWorld (reference, aeroForceBody);
+            double[] aeroTorqueWorld = BodyToWorld (reference, aeroTorqueBody);
+            if (aeroForceBody != null) {
+                Set3 (state, 79, aeroForceBody);
+                if (aeroForceWorld != null)
+                    Set3 (state, 82, aeroForceWorld);
+            }
+            if (aeroTorqueBody != null) {
+                Set3 (state, 85, aeroTorqueBody);
+                if (aeroTorqueWorld != null)
+                    Set3 (state, 88, aeroTorqueWorld);
+            }
+            if (aeroLiftBody != null)
+                Set3 (state, 91, aeroLiftBody);
+            if (aeroDragBody != null)
+                Set3 (state, 94, aeroDragBody);
+            if (aeroSideBody != null)
+                Set3 (state, 97, aeroSideBody);
+
+            // Translational residual in an inertial/world frame. Mass is native KSP
+            // tonnes, hence *1000 for kg. This is deliberately called EXTERNAL, not
+            // aerodynamic: RCS/contact/joint forces and model/frame errors also live here.
+            if ((capabilities & CapOrbitalAcceleration) != 0 &&
+                    (capabilities & CapGravity) != 0 &&
+                    (capabilities & CapMass) != 0 &&
+                    (capabilities & CapRealizedEngineWrench) != 0) {
+                double massKg = state [25] * 1000.0;
+                var externalWorld = new[] {
+                    massKg * (state [12] - state [32]) - state [70],
+                    massKg * (state [13] - state [33]) - state [71],
+                    massKg * (state [14] - state [34]) - state [72]
+                };
+                Set3 (state, 107, externalWorld);
+                double[] externalBody = WorldToBody (reference, externalWorld);
+                if (externalBody != null)
+                    Set3 (state, 110, externalBody);
+                capabilities |= CapExternalForceResidual;
+
+                if (aeroForceWorld != null) {
+                    var unexplained = new[] {
+                        externalWorld [0] - aeroForceWorld [0],
+                        externalWorld [1] - aeroForceWorld [1],
+                        externalWorld [2] - aeroForceWorld [2]
+                    };
+                    Set3 (state, 113, unexplained);
+                    capabilities |= CapUnexplainedNonAeroForce;
+                }
+            }
 
             var frame = new List<double> (
                 HeaderStride + StateStride + engines.Count + gimbals.Count + transforms.Count) {
@@ -515,6 +710,111 @@ namespace KRPC.Bridge.Actuators
             target [offset] = value [0];
             target [offset + 1] = value [1];
             target [offset + 2] = value [2];
+        }
+
+        static void Set3 (double[] target, int offset, Vector3 value)
+        {
+            target [offset] = value.x;
+            target [offset + 1] = value.y;
+            target [offset + 2] = value.z;
+        }
+
+        static SCFlight GetBodyFlight (Vessel vessel)
+        {
+            try {
+                if (!ReferenceEquals (serviceInternalVessel, vessel) ||
+                        serviceVessel == null || serviceFlightBody == null) {
+                    serviceInternalVessel = vessel;
+                    serviceVessel = new SCVessel (vessel);
+                    serviceFlightBody = serviceVessel.Flight (serviceVessel.ReferenceFrame);
+                }
+                return serviceFlightBody;
+            } catch {
+                serviceInternalVessel = null;
+                serviceVessel = null;
+                serviceFlightBody = null;
+                return null;
+            }
+        }
+
+        static bool TryTuple3 (Func<Tuple<double, double, double>> read, out double[] value)
+        {
+            value = null;
+            try {
+                var tuple = read ();
+                if (tuple == null)
+                    return false;
+                value = new[] { tuple.Item1, tuple.Item2, tuple.Item3 };
+                return IsFinite3 (value);
+            } catch {
+                return false;
+            }
+        }
+
+        static bool TryScalar<T> (Func<T> read, out double value)
+        {
+            value = double.NaN;
+            try {
+                value = Convert.ToDouble (
+                    read (), System.Globalization.CultureInfo.InvariantCulture);
+                return !double.IsNaN (value) && !double.IsInfinity (value);
+            } catch {
+                return false;
+            }
+        }
+
+        static bool IsFinite3 (double[] value)
+        {
+            return value != null && value.Length >= 3 &&
+                !double.IsNaN (value [0]) && !double.IsInfinity (value [0]) &&
+                !double.IsNaN (value [1]) && !double.IsInfinity (value [1]) &&
+                !double.IsNaN (value [2]) && !double.IsInfinity (value [2]);
+        }
+
+        static Vector3 Cross3 (Vector3 a, Vector3 b)
+        {
+            return new Vector3 (
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x);
+        }
+
+        static double Dot3 (Vector3 a, Vector3 b)
+        {
+            return (double)a.x * b.x + (double)a.y * b.y +
+                (double)a.z * b.z;
+        }
+
+        static double[] BodyToWorld (Transform reference, double[] body)
+        {
+            if (reference == null || !IsFinite3 (body))
+                return null;
+
+            // The verifier intentionally exposes only InverseTransformDirection.
+            // For a pure rotation, body->world is the transpose of world->body.
+            // Project the body vector on the body-space images of the three
+            // world basis vectors. This is equivalent to TransformDirection,
+            // while remaining compatible with both the verification stubs and
+            // Unity/KSP.
+            Vector3 b = new Vector3 (
+                (float)body [0], (float)body [1], (float)body [2]);
+            Vector3 worldXInBody = reference.InverseTransformDirection (Vector3.right);
+            Vector3 worldYInBody = reference.InverseTransformDirection (Vector3.up);
+            Vector3 worldZInBody = reference.InverseTransformDirection (Vector3.forward);
+            return new[] {
+                Dot3 (b, worldXInBody),
+                Dot3 (b, worldYInBody),
+                Dot3 (b, worldZInBody)
+            };
+        }
+
+        static double[] WorldToBody (Transform reference, double[] world)
+        {
+            if (reference == null || !IsFinite3 (world))
+                return null;
+            Vector3 body = reference.InverseTransformDirection (new Vector3 (
+                (float)world [0], (float)world [1], (float)world [2]));
+            return new[] { (double)body.x, (double)body.y, (double)body.z };
         }
 
         static void Set4 (double[] target, int offset, double[] value)

@@ -467,10 +467,31 @@ namespace KRPC.Service.Messages
 
 namespace KRPC.SpaceCenter.Services
 {
+    public class ReferenceFrame { }
+
+    public class Flight
+    {
+        public Tuple<double, double, double> AerodynamicForce { get { return Tuple.Create(0.0, 0.0, 0.0); } }
+        public Tuple<double, double, double> AerodynamicTorque { get { return Tuple.Create(0.0, 0.0, 0.0); } }
+        public Tuple<double, double, double> Lift { get { return Tuple.Create(0.0, 0.0, 0.0); } }
+        public Tuple<double, double, double> Drag { get { return Tuple.Create(0.0, 0.0, 0.0); } }
+        public float DynamicPressure { get { return 0f; } }
+        public float StaticPressure { get { return 0f; } }
+        public double AtmosphereDensity { get { return 0.0; } }
+        public float SpeedOfSound { get { return 0f; } }
+        public float TrueAirSpeed { get { return 0f; } }
+        public float AngleOfAttack { get { return 0f; } }
+        public float SideslipAngle { get { return 0f; } }
+    }
+
     public class Vessel
     {
+        public Vessel () { }
+        public Vessel (global::Vessel vessel) { }
         public Guid Id { get { return Guid.Empty; } }
         public global::Vessel InternalVessel { get { return null; } }
+        public ReferenceFrame ReferenceFrame { get { return new ReferenceFrame(); } }
+        public Flight Flight (ReferenceFrame referenceFrame = null) { return new Flight(); }
     }
 }
 

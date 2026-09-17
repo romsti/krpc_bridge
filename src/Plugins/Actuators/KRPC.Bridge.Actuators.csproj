@@ -12,4 +12,20 @@
     </ProjectReference>
   </ItemGroup>
 
+  <!-- DynamicsSnapshotV3.2 reads kRPC 0.6 Flight telemetry directly so its
+       aerodynamic values use the same documented frames/units as clients.
+       SpaceCenter ships with kRPC itself; this is not an optional mod. -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(KRPCPath)\KRPC.SpaceCenter.dll">
+      <Name>KRPC.SpaceCenter</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateSpaceCenterPath" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(BridgeUseStubs)'!='true'">
+    <Error Condition="!Exists('$(KRPCPath)\KRPC.SpaceCenter.dll')"
+           Text="KRPC.SpaceCenter.dll not found under '$(KRPCPath)'. It ships with kRPC; the install is incomplete." />
+  </Target>
+
 </Project>
