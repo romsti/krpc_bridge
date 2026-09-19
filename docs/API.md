@@ -299,6 +299,15 @@ within at most one second.
 | `apply_control_frame(token, sequence, apply_tick, valid_until_tick, lease_seconds, engine_commands, gimbal_commands)` | `int` | Validates a complete frame and queues it for one `FixedUpdate`; returns its scheduled tick. |
 | `control_status_v2()` | `list[float]` | Ownership, queue, acknowledgement and result state described below. |
 | `release_control(token)` | `int` | Cancels the pending frame, restores all v2 actuator leases and releases authority. |
+| `dynamics_protocol_version` | `int` | `3`, the protocol of the dynamics frames below. |
+| `dynamics_snapshot_v3()`, `dynamics_frames_v3(since_tick=0, max_frames=64)`, `dynamics_status_v3()` | `list[float]` | Read-only FixedUpdate dynamics of the ACTIVE vessel, [below](#dynamics-protocol-v3-pdg2). |
+| `aero_actuator_snapshot_v1()`, `aero_actuator_frames_v1(since_tick=0, max_frames=64)`, `aero_actuator_status_v1()` | `list[float]` | Same-FixedUpdate state of the active vessel's aero surfaces and deployment animations (header protocol, schema, tick, UT, row count, stride `9`; rows `part_flight_id, module_kind, module_ordinal, deploy_bool, deploy_fraction, authority_limiter, deploy_angle_deg, animation_open_hint, enabled_hint`). The realized deflection angle is in DynamicsExtV1. |
+| `dynamics_ext_enable_v1(enabled, lease_seconds=5)` | `list[float]` | Arms (or disarms) the DynamicsExtV1 capture for 0.5–60 s of real time; returns its status. Born closed. |
+| `dynamics_ext_snapshot_v1()`, `dynamics_ext_frames_v1(since_tick=0, max_frames=64)`, `dynamics_ext_status_v1()` | `list[float]` | Same-tick supplemental frames of the active vessel, [below](#dynamicsextv1-same-tick-supplement). |
+| `track_vessel_v3(persistent_id, lease_seconds=5)` / `untrack_vessel_v3(persistent_id)` | `bool` | Starts/renews (0.5–60 s) or stops the capture of a loaded vessel by `persistentId` (decimal string), active or not. At most four. |
+| `tracked_vessels_v3()` | `list[float]` | The tracked-vessel registry. |
+| `tracked_dynamics_snapshot_v3(persistent_id)`, `tracked_dynamics_frames_v3(persistent_id, since_tick=0, max_frames=64)`, `tracked_dynamics_ext_frames_v1(persistent_id, since_tick=0, max_frames=64)` | `list[float]` | v3 / DynamicsExtV1 frames of one tracked vessel, [below](#tracked-vessels-by-persistentid). |
+| `simulate_aerodynamic_wrench_batch_v1(states, non_rotating_frame=True, persistent_id="")` | `list[float]` | Up to 32 `Flight.simulate_aerodynamic_wrench_at` evaluations in one call, [below](#batched-aerodynamic-wrench). Read-only. |
 
 `thrust_limit` and independent throttle are different controls. The former is a ceiling
 already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
@@ -375,10 +384,14 @@ any queued actuator frame and leased-gimbal update for that callback. The next f
 therefore show the physical response to a known `last_applied_sequence` /
 `last_applied_tick` pair.
 
-The bridge keeps the latest 300 frames (about six seconds at 50 Hz). Use
+The bridge keeps the latest 1000 frames (about twenty seconds at 50 Hz). Use
 `dynamics_frames_v3(since_tick, max_frames)` to retrieve the ring without relying on the
 Python/RPC polling cadence. `max_frames` is clamped to 1–128. A topology or active-vessel
 change clears the ring rather than mixing incompatible actuator row layouts.
+
+This stream always follows `FlightGlobals.ActiveVessel`. With two boosters in flight, the
+process flying the non-active one must use a [tracked vessel](#tracked-vessels-by-persistentid)
+instead, or it reads the other booster.
 
 #### Wire compatibility
 
@@ -450,6 +463,21 @@ These values preserve the V3.1 native-KSP contract. `mass_tonnes` is tonnes and 
 `final_thrust_kn` / `max_thrust_kn` are kN, retaining the convenient
 `kN / tonne = m/s²` relationship. The `_raw` aerodynamic fields remain best-effort
 reflection probes and should not be used by new flight-critical code.
+
+**Two names in this prefix do not mean what they say** (verified 2026-09-19 against the
+decompiled KSP 1.12.5 `VesselPrecalculate.CalculatePhysicsStats` and three flights). The
+names are kept for wire and log compatibility; read them as follows:
+
+| Field | Actual frame and unit |
+|---|---|
+| `angular_velocity_world_xyz` | **Vessel BODY frame** (right, forward, bottom), rad/s. KSP's `Vessel.angularVelocity` is the mass-weighted mean of `Inverse(ReferenceTransform.rotation) * rb.angularVelocity`. On three flights the published quaternion's derivative matches it with a 0.2–0.5 % median residual in the body frame, against more than 100 % in the world frame. Rotate by `rotation_world_xyzw` to get Unity world. |
+| `angular_acceleration_derived_xyz` | Tick difference of the above, so body frame too (rad/s²). Because ω×ω = 0 it equals the world angular acceleration expressed in the body frame. |
+| `moi_native_xyz` | **Diagonal** of the inertia tensor about the CoM, body frame, in **tonne·m²** (built from `rb.mass`, in tonnes). kRPC's `Vessel.moment_of_inertia` is exactly this × 1000 (kg·m²); `Vessel.inertia_tensor` is the full tensor × 1000 in the same frame. |
+
+Beware of the obvious cross-check: kRPC's `vessel.angular_velocity(vessel.reference_frame)`
+is **always zero**, because it returns `frame.Rotation⁻¹·(ω_root − ω_frame)` and the vessel
+frame rotates with the vessel. Use `vessel.angular_velocity(body.non_rotating_reference_frame)`
+and bring it to the vessel frame with `vessel.rotation(body.non_rotating_reference_frame)`.
 
 #### Schema-2 extension: offsets 67–115 of the state block
 
@@ -563,6 +591,165 @@ capability_mask, latest_applied_sequence, latest_applied_tick, actuator_result
 
 `python/dynamics_v3.py` is the canonical dependency-free decoder for both RPCs. Keep BB,
 coast and PDG2 behind that decoder instead of hard-coding offsets in multiple places.
+It also decodes every transport below, and `canonical_rotation_state()` returns the body
+angular rates and the inertia in kg·m² under names that say so.
+
+### DynamicsExtV1 (same-tick supplement)
+
+Quantities the v3 frame does not carry: realized control-surface angles, RCS and
+reaction-wheel wrench, thrust available at the current pressure, realized mass flow,
+the per-actuator control-effectiveness matrix B, INDI residuals computed **in shadow**,
+and the first response tick of each actuator after a v2 frame. It is captured in the
+**same** `Pump` call and physics tick as the v3 frame, after it, from the finished v3
+state array, then kept in its own 1000-frame ring. Join the two by
+`(physics_tick, vessel_persistent_id)`.
+
+It is a separate transport on purpose. PDG2 decodes `dynamics_snapshot_v3()` in the flight
+loop, and the decoder rejects any unknown schema, so appending to v3 would break a flight
+whose Python side is older than the DLL. With DynamicsExtV1 disarmed, the v3 frames are
+byte-identical to earlier builds.
+
+**Born closed.** Nothing is captured until `dynamics_ext_enable_v1(True, lease_seconds)`.
+The lease is 0.5–60 s of real time. When it runs out, capture stops and the per-vessel
+memory is cleared. `dynamics_ext_enable_v1(False, ...)` disarms at once. Nothing in this
+transport writes game state or commands an actuator.
+
+The frame is a 19-double header, a 52-double state block, then five row sections:
+
+| Header offset | Meaning |
+|---:|---|
+| 0–1 | protocol (`1`), schema (`1`) |
+| 2–6 | physics tick, UT, fixed delta time, vessel persistent id, topology generation |
+| 7 | capability bit mask |
+| 8 | state stride (`52`) |
+| 9–10 | engine rows / stride (`9`) |
+| 11–12 | control-surface rows / stride (`13`) |
+| 13–14 | RCS rows / stride (`16`) |
+| 15–16 | B rows / stride (`9`) |
+| 17–18 | response rows / stride (`12`) |
+
+State block. Body frame = right, forward, bottom:
+
+| Offsets | Field | Unit / source |
+|---:|---|---|
+| 0–2 | `omega_body_rad_s` | v3 state 19–21 under its true name |
+| 3–5 | `omega_dot_body_rad_s2` | v3 state 22–24 under its true name |
+| 6–8 | `moi_body_kg_m2` | v3 `moi_native` × 1000 |
+| 9–11, 12–14 | `rcs_force_body_n`, `rcs_force_world_n` | Σ −(`useZaxis` ? forward : up) × `ModuleRCS.thrustForces[i]` × 1000; modules marked `isJustForShow` apply nothing and add nothing |
+| 15–17 | `rcs_torque_body_nm` | Σ r × F about the current CoM |
+| 18–20 | `reaction_wheel_torque_body_nm` | Σ −`ModuleReactionWheel.inputVector` × 1000 over wheels that are enabled, `operational` and `Active`, i.e. what `ActiveUpdate` passes to `AddTorque` |
+| 21–23 | `control_torque_body_nm` | realized engine torque (v3 73–75) + RCS + wheels |
+| 24–27 | engine totals | Σ available thrust (kN), Σ max thrust (kN), Σ realized mass flow (kg/s), Σ requested mass flow (kg/s) |
+| 28–30 | `indi_delta_omega_dot_rad_s2` | Δω̇ₖ = ω̇ₖ − ω̇ₖ₋₁ |
+| 31–33 | `indi_pred_b_rad_s2` | I⁻¹·(B·Δuₖ + ΔM_RCS + ΔM_wheels): gimbal and thrust columns at the current tick, RCS and wheels as measured increments |
+| 34–36 | `indi_pred_m_rad_s2` | I⁻¹·ΔM_control: change of the realized control torque |
+| 37–39 | `indi_pred_aero_rad_s2` | I⁻¹·ΔM_aero: kRPC live aerodynamic torque |
+| 40–42 | `indi_residual_b_rad_s2` | Δω̇ₖ − pred_bₖ₋₁ |
+| 43–45 | `indi_residual_m_rad_s2` | Δω̇ₖ − pred_mₖ₋₁ |
+| 46–48 | `indi_residual_b_filtered_rad_s2` | first-order H(z), τ = 0.1 s, on residual_b. The same filter on both terms equals the filter on their difference |
+| 49–51 | `indi_filter_tau_s`, `indi_lag_ticks` (`1`), `indi_valid_streak` | |
+
+The residual is plan GNC §10.8 item 7, r = ω̇_f(t+1) − ω̇_f(t) − I⁻¹·B_M·Δu(t), in shadow.
+The lag is one tick: the actuator state read in FixedUpdate k acts during the physics step
+that follows it. Ordering between MonoBehaviours is not guaranteed, so every ingredient is
+published per tick, and offline tools can re-align at another lag. Diagonal inertia only;
+the gyroscopic term ω × Iω is not subtracted. `pred_b − pred_m` isolates the error of the B
+linearization against the geometric torque change of the real nozzles. A consistent sign
+error in B shows up there.
+
+Engine rows: `flight_id, ordinal, available_thrust_kn, max_thrust_kn,
+thrust_per_throttle_kn, realized_mass_flow_kg_s, requested_mass_flow_kg_s,
+isp_at_pressure_s, static_pressure_atm`.
+- Available and max thrust are the stock `ModuleEngines.MaxThrustOutputAtm(true,
+  useThrustLimiter, part.staticPressureAtm, 310, part.atmDensity)`: the dV app's own
+  function, with no side effect. `atmTemp` is unused by the stock body.
+- `thrust_per_throttle_kn` is `finalThrust / currentThrottle` above 1 % throttle. It is the
+  live throttle-to-thrust gain, including propellant starvation.
+- Realized mass flow is `MassFlow() × propellantReqMet / 100 / fixedDeltaTime`, while
+  ignited and thrusting, else 0. Requested mass flow is `requestedMassFlow` as last
+  computed by the engine.
+
+Control-surface rows: `flight_id, kind, ordinal, deflection_deg, action_deg,
+ctrl_surface_range_deg, authority_limiter_pct, deploy, deploy_angle_deg,
+current_deploy_angle_deg, actuator_speed_deg_s, use_exponential_speed, ignore_mask`.
+- `kind` is 1 for `ModuleAeroSurface` (airbrake) and 2 for any other `ModuleControlSurface`.
+- `deflection` is the applied angle, rate-limited toward `action` and written to the
+  surface transform in the same update. Both are protected KSP fields, read by reflection.
+- `ignore_mask` is pitch = 1, yaw = 2, roll = 4.
+
+RCS rows: `flight_id, ordinal, module_enabled, rcs_enabled, rcs_active, just_for_show,
+nozzle_count, thrust_sum_kn, thruster_power_kn, realized_isp_s, force_body_xyz_n,
+torque_body_xyz_nm`.
+
+B rows: `flight_id, ordinal, kind, axis, b_body_xyz, u, du`.
+- `kind` 1 is a gimbal, with columns ∂M/∂δx (axis 0) and ∂M/∂δy (axis 1) in N·m per
+  degree, and u in degrees.
+- `kind` 2 is an engine's thrust, with ∂M/∂T in N·m per kN, and u = `finalThrust` in kN.
+- The gimbal derivative follows the stock (and lease) transform formula
+  `initRots[i] * AngleAxis(δx, xMult·right) * AngleAxis(δy, yMult·(flipYZ ? forward : up))`.
+  A change of δx is a world rotation about `parent.rotation * initRots[i] * xMult·right`,
+  and a change of δy is one about the second axis after δx. Every thrust transform that
+  `IsChildOf` the gimbal transform turns with it: direction and lever. The realized δ is
+  `actuationLocal`, or zero for a locked stock gimbal.
+
+Response rows (active vessel only, after a v2 frame applied while armed): `kind (1 engine,
+2 gimbal), flight_id, ordinal, sequence, apply_tick, first_response_tick, baseline_x,
+command_x, realized_x, baseline_y, command_y, realized_y`.
+- Baselines are sampled before the frame's commands are written.
+- The response tick is the first captured tick whose realized value (engine
+  `currentThrottle`, gimbal `actuationLocal`) moved by more than 1e-4 from its baseline.
+- A response tick equal to `apply_tick` means the change was already visible in the same
+  FixedUpdate. `NaN` means no response yet.
+
+Capability bits:
+
+```text
+0 rotational_state_body      5 engine_availability      10 indi_prediction_m
+1 moi_kg_m2                  6 control_surfaces         11 indi_prediction_aero
+2 rcs_realized               7 b_matrix                 12 indi_residual_b
+3 reaction_wheel_realized    8 indi_delta_omega_dot     13 indi_residual_m
+4 control_torque             9 indi_prediction_b        14 response_tracking
+```
+
+`dynamics_ext_frames_v1()` uses the same six-value history header and length prefixes as
+`dynamics_frames_v3()`. `dynamics_ext_status_v1()` returns `protocol, schema, armed,
+lease_remaining_s, latest_tick, history_count, history_capacity, capability_mask`.
+
+### Tracked vessels by persistentId
+
+`track_vessel_v3(persistent_id, lease_seconds)` makes the bridge capture one loaded vessel
+by identity in every FixedUpdate, whether it is active or not, in exactly the v3 frame
+format. That vessel gets its own ring, finite differences and topology generation.
+- Header fields 7–10 carry the v2 controller's sequence data only when that vessel is the
+  one under v2 control; otherwise they are 0.
+- An unloaded vessel yields no frame, and the channel is cleared.
+- The registration is a real-time lease the client renews.
+- At most four vessels are tracked.
+- The active-vessel stream is unaffected.
+
+Get the persistentId of a kRPC `Vessel` handle from `conn.ident.vessel_ids(vessel)`, which
+returns `persistentId<TAB>Guid`. `tracked_vessels_v3()` returns `protocol, count, stride (6)`
+then rows `persistent_id, loaded, lease_remaining_s, topology_generation, latest_tick,
+history_count`. The tracked snapshot and frame calls raise when the vessel is not tracked.
+While DynamicsExtV1 is armed, tracked vessels also get their ext frames (without response
+rows).
+
+### Batched aerodynamic wrench
+
+`simulate_aerodynamic_wrench_batch_v1(states, non_rotating_frame=True, persistent_id="")`
+runs the installed kRPC `Flight.simulate_aerodynamic_wrench_at` for up to 32 hypothetical
+states in one call.
+- Each state is 14 doubles: position xyz (m), velocity xyz (m/s), rotation xyzw,
+  angular velocity xyz (rad/s), ut.
+- The frame is the main body's non-rotating frame, which kRPC recommends for prediction,
+  or its rotating frame.
+- The reply is `protocol (1), count, stride (7), frame code`, then per state
+  `ok, force_xyz_n, torque_xyz_nm` in the same frame. A failed or non-finite state gives
+  `ok = 0` and NaNs.
+- The kRPC member is bound in a separate method, so a kRPC build without it fails this call
+  only.
+
+Each state walks every part's drag cubes on the Unity thread; keep the batches small.
 
 ---
 
