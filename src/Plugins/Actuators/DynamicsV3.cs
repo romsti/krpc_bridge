@@ -810,7 +810,7 @@ namespace KRPC.Bridge.Actuators
                 Copy3 (angularVelocity, ch.previousAngularVelocity);
         }
 
-        static double[] NewNaNArray (int count)
+        internal static double[] NewNaNArray (int count)
         {
             var values = new double[count];
             for (int i = 0; i < count; i++)
@@ -884,7 +884,7 @@ namespace KRPC.Bridge.Actuators
                 !double.IsNaN (value [2]) && !double.IsInfinity (value [2]);
         }
 
-        static Vector3 Cross3 (Vector3 a, Vector3 b)
+        internal static Vector3 Cross3 (Vector3 a, Vector3 b)
         {
             return new Vector3 (
                 a.y * b.z - a.z * b.y,
@@ -928,6 +928,12 @@ namespace KRPC.Bridge.Actuators
             Vector3 body = reference.InverseTransformDirection (new Vector3 (
                 (float)world [0], (float)world [1], (float)world [2]));
             return new[] { (double)body.x, (double)body.y, (double)body.z };
+        }
+
+        /// <summary>WorldToBody for DynamicsExtV1 (same transform, same float rounding).</summary>
+        internal static double[] WorldToBodyVector (Transform reference, double[] world)
+        {
+            return WorldToBody (reference, world);
         }
 
         static void Set4 (double[] target, int offset, double[] value)

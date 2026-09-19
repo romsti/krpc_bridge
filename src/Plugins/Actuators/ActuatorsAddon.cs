@@ -153,6 +153,12 @@ namespace KRPC.Bridge.Actuators
                 vessel, physicsTick, topologyGeneration,
                 lastAcceptedSequence, lastAppliedSequence,
                 lastAppliedTick, lastResult);
+
+            // Vessels followed by persistentId (vols doubles). Returns at once when none
+            // is tracked, so the active-vessel path above is untouched.
+            DynamicsTracked.Pump (
+                physicsTick, controllerVesselId, lastAcceptedSequence,
+                lastAppliedSequence, lastAppliedTick, lastResult);
         }
 
         internal static void RequireLegacyControlAvailable ()
@@ -352,6 +358,12 @@ namespace KRPC.Bridge.Actuators
                 return;
             }
 
+            // Observation only (DynamicsExtV1 armed): baselines BEFORE the commands are
+            // written, so the first realized response of each actuator can be dated.
+            bool trackResponse = DynamicsExt.Enabled;
+            if (trackResponse)
+                ResponseTracker.BeforeApply (frame.Sequence, frame.Engines, frame.Gimbals);
+
             try {
                 for (int i = 0; i < frame.Engines.Count; i++)
                     Command (frame.Engines [i].Engine,
@@ -363,7 +375,11 @@ namespace KRPC.Bridge.Actuators
                 lastAppliedSequence = frame.Sequence;
                 lastAppliedTick = physicsTick;
                 lastResult = ResultApplied;
+                if (trackResponse)
+                    ResponseTracker.AfterApply (physicsTick);
             } catch (Exception exc) {
+                if (trackResponse)
+                    ResponseTracker.Clear ();
                 RestoreAll ();
                 lastResult = ResultApplyFailed;
                 BridgeLog.Error (
@@ -395,7 +411,7 @@ namespace KRPC.Bridge.Actuators
             DynamicsV3.Reset ();
         }
 
-        static ulong ComputeTopologyHash (Vessel vessel)
+        internal static ulong ComputeTopologyHash (Vessel vessel)
         {
             unchecked {
                 ulong hash = 1469598103934665603UL;
@@ -623,6 +639,8 @@ namespace KRPC.Bridge.Actuators
             observedTopologyHash = 0;
             lastSnapshot = new List<double> ();
             DynamicsV3.Reset ();
+            DynamicsTracked.ResetForScene ();
+            ResponseTracker.Clear ();
         }
 
         internal static void Command (ModuleEngines engine, float percentage, float leaseSeconds)

@@ -87,8 +87,11 @@ namespace UnityEngine
 
     public struct Quaternion
     {
+        public static Quaternion identity { get { return new Quaternion (); } }
         public static Quaternion AngleAxis (float angle, Vector3 axis) { return new Quaternion (); }
+        public static Quaternion Inverse (Quaternion rotation) { return rotation; }
         public static Quaternion operator * (Quaternion left, Quaternion right) { return left; }
+        public static Vector3 operator * (Quaternion rotation, Vector3 point) { return point; }
     }
 
     public class Transform : Object
@@ -96,7 +99,12 @@ namespace UnityEngine
         public Quaternion localRotation;
         public Vector3 position { get { return Vector3.zero; } }
         public Vector3 forward { get { return Vector3.forward; } }
+        public Vector3 up { get { return Vector3.up; } }
+        public Quaternion rotation { get { return new Quaternion (); } }
+        public Transform parent { get { return null; } }
         public Vector3 InverseTransformDirection (Vector3 direction) { return direction; }
+        // Real: [FreeFunction("Internal_IsChildOrSameTransform")] - true for itself too.
+        public bool IsChildOf (Transform parent) { return false; }
     }
 }
 
@@ -190,6 +198,8 @@ public class Part : UnityEngine.MonoBehaviour
     public double maxTemp;
     public double skinTemperature;
     public double skinMaxTemp;
+    public double staticPressureAtm;
+    public double atmDensity;
     public List<PartModule> Modules = new List<PartModule> ();
 }
 
@@ -197,6 +207,12 @@ public class PartModule : UnityEngine.MonoBehaviour
 {
     public Part part;
     public Vessel vessel;
+    public bool moduleIsEnabled;
+}
+
+public class FloatCurve
+{
+    public float Evaluate (float time) { return 0f; }
 }
 
 public class ModuleEngines : PartModule
@@ -212,11 +228,59 @@ public class ModuleEngines : PartModule
     public bool useEngineResponseTime;
     public float engineAccelerationSpeed;
     public float engineDecelerationSpeed;
-    public double requestedMassFlow;
-    public double propellantReqMet;
+    // KSP 1.12.5: both are float (ksp_knowledge + decompiled Assembly-CSharp).
+    public float requestedMassFlow;
+    public float propellantReqMet;
     public float realIsp;
+    public FloatCurve atmosphereCurve;
     public List<UnityEngine.Transform> thrustTransforms = new List<UnityEngine.Transform> ();
     public List<float> thrustTransformMultipliers = new List<float> ();
+    // Real: massFlow of the last CalculateThrust (tonnes per tick, FuelUsage included).
+    public double MassFlow () { return 0.0; }
+    // Real: stock max thrust at the given atmosphere (kN), no side effect.
+    public virtual float MaxThrustOutputAtm (bool runningActive = false, bool useThrustLimiter = true,
+        float atmPressure = 1f, double atmTemp = 310.0, double atmDensity = 1.225000023841858) { return 0f; }
+}
+
+public class ModuleRCS : PartModule
+{
+    public List<UnityEngine.Transform> thrusterTransforms = new List<UnityEngine.Transform> ();
+    public float[] thrustForces = new float[0];
+    public bool useZaxis;
+    public bool isJustForShow;
+    public bool rcsEnabled;
+    public bool rcs_active;
+    public float thrusterPower;
+    public float realISP;
+}
+
+public class ModuleReactionWheel : PartModule
+{
+    public enum WheelState { Active, Disabled, Broken }
+    public WheelState wheelState;
+    public bool operational;
+    public UnityEngine.Vector3 inputVector;
+}
+
+public class ModuleControlSurface : PartModule
+{
+    public float ctrlSurfaceRange;
+    public float authorityLimiter;
+    public bool deploy;
+    public float deployAngle;
+    public float actuatorSpeed;
+    public bool useExponentialSpeed;
+    public bool ignorePitch;
+    public bool ignoreYaw;
+    public bool ignoreRoll;
+    public float currentDeployAngle { get; private set; }
+    // Read by reflection in the plugin, exactly as in KSP where they are protected.
+    protected float action;
+    protected float deflection;
+}
+
+public class ModuleAeroSurface : ModuleControlSurface
+{
 }
 
 public class ModuleGimbal : PartModule
@@ -482,6 +546,23 @@ namespace KRPC.SpaceCenter.Services
         public float TrueAirSpeed { get { return 0f; } }
         public float AngleOfAttack { get { return 0f; } }
         public float SideslipAngle { get { return 0f; } }
+
+        // Installed KRPC.SpaceCenter 0.6.0.0 (decompiled): force (N) then torque (N.m
+        // about the CoM), both in the Flight's reference frame.
+        public Tuple<Tuple<double, double, double>, Tuple<double, double, double>> SimulateAerodynamicWrenchAt (
+            CelestialBody body, Tuple<double, double, double> position,
+            Tuple<double, double, double> velocity, Tuple<double, double, double, double> rotation,
+            Tuple<double, double, double> angularVelocity, double ut)
+        {
+            return Tuple.Create (Tuple.Create (0.0, 0.0, 0.0), Tuple.Create (0.0, 0.0, 0.0));
+        }
+    }
+
+    public class CelestialBody
+    {
+        public CelestialBody (global::CelestialBody body) { }
+        public ReferenceFrame ReferenceFrame { get { return new ReferenceFrame (); } }
+        public ReferenceFrame NonRotatingReferenceFrame { get { return new ReferenceFrame (); } }
     }
 
     public class Vessel
