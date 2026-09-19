@@ -1,3 +1,29 @@
+# Unreleased — plan GNC P5: DynamicsExtV1, tracked vessels, Q7 frames
+
+- Documented, from the decompiled KSP 1.12.5 source and three flights, that the v3
+  `angular_velocity_world_*` / `angular_acceleration_derived_*` fields are in the vessel
+  BODY frame and `moi_native_*` is a diagonal in tonne·m² (kRPC ×1000). Names are kept
+  for wire compatibility.
+- DynamicsSnapshotV3 frames are byte-identical: capture state moved into a per-vessel
+  channel, and the active-vessel channel produces the same output.
+- New `DynamicsExtV1` transport, same Pump and tick, **born closed** (real-time lease
+  0.5–60 s, `dynamics_ext_enable_v1`):
+  - realized control-surface deflection and target;
+  - RCS and reaction-wheel wrench;
+  - thrust available at the current pressure (`MaxThrustOutputAtm`);
+  - realized mass flow;
+  - per-actuator B columns;
+  - INDI residuals computed in shadow (plan GNC §10.8 item 7);
+  - first response tick of each actuator after a v2 frame.
+- Tracked vessels: `track_vessel_v3(persistent_id)` captures a loaded, possibly non-active
+  vessel in the v3 format, for two-booster flights. It uses a lease, and at most four
+  vessels can be tracked.
+- `simulate_aerodynamic_wrench_batch_v1`: up to 32 `simulate_aerodynamic_wrench_at` states
+  in one RPC. Read-only.
+- Documented the previously missing `dynamics_protocol_version` and `aero_actuator_*`
+  members. The v3 ring is 1000 frames, not 300.
+- No actuator command behaviour or flight guidance was changed.
+
 # Unreleased — DynamicsSnapshotV3 schema 2 / PDG2 observability
 
 - Fixed Dynamics V3.2 realized engine wrench sign: `engine_force_*` now reports the reaction force applied to the vessel (`-thrustTransform.forward`), and capability bit 30 (`realized_engine_force_on_vessel`) marks the corrected semantics. This also fixes the sign of `external_force_residual` / `unexplained_non_aero_force` during powered flight.
