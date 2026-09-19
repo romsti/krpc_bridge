@@ -55,6 +55,85 @@ namespace KRPC.Bridge.Actuators
     }
 
     /// <summary>
+    /// Per-vessel capture state: the frame ring, the latest frame and the previous-tick
+    /// values used for finite differences.
+    ///
+    /// One instance follows the active vessel (the historical DynamicsSnapshotV3 path, whose
+    /// frames are unchanged); DynamicsTracked keeps one more instance per vessel a client
+    /// asked to follow by persistentId. Keeping the previous-tick state per instance is what
+    /// stops two vessels from differentiating each other's velocities.
+    /// </summary>
+    internal sealed class DynamicsChannel
+    {
+        internal readonly LinkedList<double[]> history = new LinkedList<double[]> ();
+        internal double[] latest = new double[0];
+        internal long latestCapabilities;
+        internal long latestTick;
+        internal int latestAppliedSequence;
+        internal long latestAppliedTick;
+        internal int latestResult;
+
+        // kRPC SpaceCenter wrapper used only to read the official 0.6.x Flight
+        // live-aerodynamics API in the same FixedUpdate as the native state.
+        // Reused across ticks to avoid a pair of wrapper allocations at 50 Hz.
+        internal Vessel serviceInternalVessel;
+        internal SCVessel serviceVessel;
+        internal SCFlight serviceFlightBody;
+
+        internal bool havePrevious;
+        internal long previousTick;
+        internal readonly double[] previousSurfaceVelocity = new double[3];
+        internal readonly double[] previousOrbitalVelocity = new double[3];
+        internal readonly double[] previousAngularVelocity = new double[3];
+
+        // Supplemental same-tick frames (DynamicsExtV1), captured only while enabled.
+        internal readonly DynamicsExtState ext = new DynamicsExtState ();
+
+        internal void Reset ()
+        {
+            history.Clear ();
+            latest = new double[0];
+            latestCapabilities = 0;
+            latestTick = 0;
+            latestAppliedSequence = 0;
+            latestAppliedTick = 0;
+            latestResult = 0;
+            serviceInternalVessel = null;
+            serviceVessel = null;
+            serviceFlightBody = null;
+            havePrevious = false;
+            previousTick = 0;
+            ext.Reset ();
+        }
+
+        internal IList<double> ReadLatest ()
+        {
+            return new List<double> (latest);
+        }
+
+        internal IList<double> ReadStatus ()
+        {
+            return new List<double> {
+                DynamicsV3.ProtocolVersion,
+                DynamicsV3.SchemaVersion,
+                latestTick,
+                history.Count,
+                DynamicsV3.HistoryCapacity,
+                latestCapabilities,
+                latestAppliedSequence,
+                latestAppliedTick,
+                latestResult
+            };
+        }
+
+        internal IList<double> ReadHistory (int sinceTick, int maxFrames)
+        {
+            return DynamicsV3.ReadRing (history, DynamicsV3.ProtocolVersion,
+                DynamicsV3.SchemaVersion, sinceTick, maxFrames);
+        }
+    }
+
+    /// <summary>
     /// Captures one coherent pre-integration FixedUpdate state and keeps a short ring.
     ///
     /// ActuatorsAddon.Pump applies a queued command first, updates leased gimbals, then
@@ -75,6 +154,14 @@ namespace KRPC.Bridge.Actuators
         internal const int GimbalStride = 19;
         internal const int TransformStride = 10;
         internal const int HistoryCapacity = 1000; // ~20 s at 50 Hz; survives long GNC stalls during instrumentation
+
+        // State offsets read back by DynamicsExtV1 (same tick, same array).
+        internal const int StateAngularVelocity = 19;   // BODY frame, see docs/API.md
+        internal const int StateAngularAcceleration = 22;
+        internal const int StateCoM = 26;
+        internal const int StateMoi = 29;               // tonne.m^2 (KSP native)
+        internal const int StateEngineTorqueBody = 73;
+        internal const int StateAeroTorqueBody = 85;
 
         // Capability bits.  Missing/unknown quantities remain NaN, never guessed.
         const long CapPosition = 1L << 0;
@@ -109,70 +196,46 @@ namespace KRPC.Bridge.Actuators
         const long CapUnexplainedNonAeroForce = 1L << 29;
         const long CapRealizedEngineForceOnVessel = 1L << 30;
 
-        static readonly LinkedList<double[]> history = new LinkedList<double[]> ();
         static readonly Dictionary<string, MemberInfo> memberCache =
             new Dictionary<string, MemberInfo> (StringComparer.Ordinal);
         static readonly Dictionary<string, MethodInfo> methodCache =
             new Dictionary<string, MethodInfo> (StringComparer.Ordinal);
 
-        static double[] latest = new double[0];
-        static long latestCapabilities;
-        static long latestTick;
-        static int latestAppliedSequence;
-        static long latestAppliedTick;
-        static int latestResult;
+        // The active-vessel channel: the historical DynamicsSnapshotV3 stream.
+        static readonly DynamicsChannel active = new DynamicsChannel ();
 
-        // kRPC SpaceCenter wrapper used only to read the official 0.6.x Flight
-        // live-aerodynamics API in the same FixedUpdate as the native state.
-        // Reused across ticks to avoid a pair of wrapper allocations at 50 Hz.
-        static Vessel serviceInternalVessel;
-        static SCVessel serviceVessel;
-        static SCFlight serviceFlightBody;
-
-        static bool havePrevious;
-        static long previousTick;
-        static double[] previousSurfaceVelocity = new double[3];
-        static double[] previousOrbitalVelocity = new double[3];
-        static double[] previousAngularVelocity = new double[3];
+        internal static DynamicsChannel Active {
+            get { return active; }
+        }
 
         internal static void Reset ()
         {
-            history.Clear ();
-            latest = new double[0];
-            latestCapabilities = 0;
-            latestTick = 0;
-            latestAppliedSequence = 0;
-            latestAppliedTick = 0;
-            latestResult = 0;
-            serviceInternalVessel = null;
-            serviceVessel = null;
-            serviceFlightBody = null;
-            havePrevious = false;
-            previousTick = 0;
+            active.Reset ();
             AeroActuatorV1.Reset ();
         }
 
         internal static IList<double> ReadLatest ()
         {
-            return new List<double> (latest);
+            return active.ReadLatest ();
         }
 
         internal static IList<double> ReadStatus ()
         {
-            return new List<double> {
-                ProtocolVersion,
-                SchemaVersion,
-                latestTick,
-                history.Count,
-                HistoryCapacity,
-                latestCapabilities,
-                latestAppliedSequence,
-                latestAppliedTick,
-                latestResult
-            };
+            return active.ReadStatus ();
         }
 
         internal static IList<double> ReadHistory (int sinceTick, int maxFrames)
+        {
+            return active.ReadHistory (sinceTick, maxFrames);
+        }
+
+        /// <summary>
+        /// Shared ring reader: the six-value history header, then length-prefixed frames
+        /// newer than sinceTick. The tick is always at offset 2 of a frame.
+        /// </summary>
+        internal static IList<double> ReadRing (
+            LinkedList<double[]> history, int protocol, int schema,
+            int sinceTick, int maxFrames)
         {
             int limit = Math.Min (128, Math.Max (1, maxFrames));
             long oldestTick = history.First == null ? 0 : FrameTick (history.First.Value);
@@ -189,8 +252,8 @@ namespace KRPC.Bridge.Actuators
             // history header: protocol, schema, frame_count, oldest_tick, newest_tick,
             // dropped_before. Every frame is length-prefixed afterwards.
             var output = new List<double> (6 + selected.Count * 128) {
-                ProtocolVersion,
-                SchemaVersion,
+                protocol,
+                schema,
                 selected.Count,
                 oldestTick,
                 newestTick,
@@ -217,6 +280,24 @@ namespace KRPC.Bridge.Actuators
         {
             if (vessel == null || !vessel.loaded) {
                 Reset ();
+                return;
+            }
+            CaptureInto (active, vessel, physicsTick, topologyGeneration,
+                lastAcceptedSequence, lastAppliedSequence, lastAppliedTick, lastResult,
+                true);
+        }
+
+        /// <summary>
+        /// One capture into one channel. The active channel also drives AeroActuatorV1;
+        /// a tracked channel does not (that transport stays active-vessel only).
+        /// </summary>
+        internal static void CaptureInto (
+            DynamicsChannel ch, Vessel vessel, long physicsTick, long topologyGeneration,
+            int lastAcceptedSequence, int lastAppliedSequence,
+            long lastAppliedTick, int lastResult, bool captureAeroActuators)
+        {
+            if (vessel == null || !vessel.loaded) {
+                ch.Reset ();
                 return;
             }
 
@@ -246,15 +327,15 @@ namespace KRPC.Bridge.Actuators
             }
 
             double dt = Math.Max (1e-6, TimeWarp.fixedDeltaTime);
-            if (havePrevious && physicsTick == previousTick + 1) {
+            if (ch.havePrevious && physicsTick == ch.previousTick + 1) {
                 if ((capabilities & CapSurfaceVelocity) != 0) {
                     Set3 (state, 9, DifferenceOverDt (
-                        surfaceVelocity, previousSurfaceVelocity, dt));
+                        surfaceVelocity, ch.previousSurfaceVelocity, dt));
                     capabilities |= CapSurfaceAcceleration;
                 }
                 if ((capabilities & CapOrbitalVelocity) != 0) {
                     Set3 (state, 12, DifferenceOverDt (
-                        orbitalVelocity, previousOrbitalVelocity, dt));
+                        orbitalVelocity, ch.previousOrbitalVelocity, dt));
                     capabilities |= CapOrbitalAcceleration;
                 }
             }
@@ -265,15 +346,20 @@ namespace KRPC.Bridge.Actuators
                 capabilities |= CapRotation;
             }
 
+            // Vessel.angularVelocity is NOT world: VesselPrecalculate.CalculatePhysicsStats
+            // stores the mass-weighted mean of Inverse(ReferenceTransform.rotation) *
+            // rb.angularVelocity, i.e. the vessel BODY frame (right, forward, bottom). The
+            // schema-1 name "angular_velocity_world" is kept for wire compatibility only;
+            // the derivative below is therefore the body-frame angular acceleration too.
             double[] angularVelocity;
             if (TryReadVectorMember (vessel,
                     new[] { "angularVelocity", "angular_velocity" },
                     out angularVelocity)) {
                 Set3 (state, 19, angularVelocity);
                 capabilities |= CapAngularVelocity;
-                if (havePrevious && physicsTick == previousTick + 1) {
+                if (ch.havePrevious && physicsTick == ch.previousTick + 1) {
                     Set3 (state, 22, DifferenceOverDt (
-                        angularVelocity, previousAngularVelocity, dt));
+                        angularVelocity, ch.previousAngularVelocity, dt));
                     capabilities |= CapAngularAcceleration;
                 }
             }
@@ -290,6 +376,9 @@ namespace KRPC.Bridge.Actuators
             state [28] = com.z;
             capabilities |= CapCoM;
 
+            // Vessel.MOI is the DIAGONAL of the inertia tensor about the CoM, in the vessel
+            // body frame, in tonne.m^2 (it is built from rb.mass, in tonnes). kRPC's
+            // Vessel.moment_of_inertia is exactly this value * 1000 (kg.m^2).
             double[] moi;
             if (TryReadVectorMember (vessel, new[] { "MOI", "moi" }, out moi)) {
                 Set3 (state, 29, moi);
@@ -381,7 +470,7 @@ namespace KRPC.Bridge.Actuators
             double[] aeroLiftBody = null;
             double[] aeroDragBody = null;
             double[] aeroSideBody = null;
-            SCFlight flightBody = GetBodyFlight (vessel);
+            SCFlight flightBody = GetBodyFlight (ch, vessel);
             if (flightBody != null) {
                 bool haveAeroForce = TryTuple3 (() => flightBody.AerodynamicForce, out aeroForceBody);
                 bool haveAeroTorque = TryTuple3 (() => flightBody.AerodynamicTorque, out aeroTorqueBody);
@@ -670,7 +759,7 @@ namespace KRPC.Bridge.Actuators
                 transformCount,
                 TransformStride,
                 HistoryCapacity,
-                history.Count,
+                ch.history.Count,
                 0.0 // capture phase: pre-integration FixedUpdate
             };
             frame.AddRange (state);
@@ -678,30 +767,47 @@ namespace KRPC.Bridge.Actuators
             frame.AddRange (gimbals);
             frame.AddRange (transforms);
 
-            latest = frame.ToArray ();
-            latestCapabilities = capabilities;
-            latestTick = physicsTick;
-            latestAppliedSequence = lastAppliedSequence;
-            latestAppliedTick = lastAppliedTick;
-            latestResult = lastResult;
-            history.AddLast (latest);
-            while (history.Count > HistoryCapacity)
-                history.RemoveFirst ();
+            ch.latest = frame.ToArray ();
+            ch.latestCapabilities = capabilities;
+            ch.latestTick = physicsTick;
+            ch.latestAppliedSequence = lastAppliedSequence;
+            ch.latestAppliedTick = lastAppliedTick;
+            ch.latestResult = lastResult;
+            ch.history.AddLast (ch.latest);
+            while (ch.history.Count > HistoryCapacity)
+                ch.history.RemoveFirst ();
 
             // Supplemental surface observability, captured in the SAME FixedUpdate
             // but transported separately so DynamicsSnapshotV3/PDG2 schema stays stable.
-            try {
-                AeroActuatorV1.Capture (vessel, physicsTick);
-            } catch { }
+            if (captureAeroActuators) {
+                try {
+                    AeroActuatorV1.Capture (vessel, physicsTick);
+                } catch { }
+            }
 
-            havePrevious = true;
-            previousTick = physicsTick;
+            // DynamicsExtV1: same FixedUpdate and tick, separate transport, born closed.
+            // It only READS the finished state array above, so the v3 frame is identical
+            // whether it runs or not.
+            if (DynamicsExt.Enabled) {
+                try {
+                    DynamicsExt.Capture (ch, vessel, physicsTick, topologyGeneration,
+                        state, captureAeroActuators);
+                } catch {
+                    // Pure observability: never perturb FixedUpdate or control.
+                    ch.ext.Reset ();
+                }
+            } else if (ch.ext.HasData) {
+                ch.ext.Reset ();
+            }
+
+            ch.havePrevious = true;
+            ch.previousTick = physicsTick;
             if (surfaceVelocity != null)
-                Copy3 (surfaceVelocity, previousSurfaceVelocity);
+                Copy3 (surfaceVelocity, ch.previousSurfaceVelocity);
             if (orbitalVelocity != null)
-                Copy3 (orbitalVelocity, previousOrbitalVelocity);
+                Copy3 (orbitalVelocity, ch.previousOrbitalVelocity);
             if (angularVelocity != null)
-                Copy3 (angularVelocity, previousAngularVelocity);
+                Copy3 (angularVelocity, ch.previousAngularVelocity);
         }
 
         static double[] NewNaNArray (int count)
@@ -726,20 +832,20 @@ namespace KRPC.Bridge.Actuators
             target [offset + 2] = value.z;
         }
 
-        static SCFlight GetBodyFlight (Vessel vessel)
+        static SCFlight GetBodyFlight (DynamicsChannel ch, Vessel vessel)
         {
             try {
-                if (!ReferenceEquals (serviceInternalVessel, vessel) ||
-                        serviceVessel == null || serviceFlightBody == null) {
-                    serviceInternalVessel = vessel;
-                    serviceVessel = new SCVessel (vessel);
-                    serviceFlightBody = serviceVessel.Flight (serviceVessel.ReferenceFrame);
+                if (!ReferenceEquals (ch.serviceInternalVessel, vessel) ||
+                        ch.serviceVessel == null || ch.serviceFlightBody == null) {
+                    ch.serviceInternalVessel = vessel;
+                    ch.serviceVessel = new SCVessel (vessel);
+                    ch.serviceFlightBody = ch.serviceVessel.Flight (ch.serviceVessel.ReferenceFrame);
                 }
-                return serviceFlightBody;
+                return ch.serviceFlightBody;
             } catch {
-                serviceInternalVessel = null;
-                serviceVessel = null;
-                serviceFlightBody = null;
+                ch.serviceInternalVessel = null;
+                ch.serviceVessel = null;
+                ch.serviceFlightBody = null;
                 return null;
             }
         }
