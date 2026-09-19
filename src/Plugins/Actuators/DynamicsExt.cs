@@ -74,8 +74,6 @@ namespace KRPC.Bridge.Actuators
         internal readonly double[] prevPredM = new double[3];
         internal bool havePrevControlTorque;
         internal readonly double[] prevControlTorque = new double[3];
-        internal bool havePrevEngineTorque;
-        internal readonly double[] prevEngineTorque = new double[3];
         internal bool havePrevAuxTorque;
         internal readonly double[] prevAuxTorque = new double[3];
         internal bool havePrevAeroTorque;
@@ -109,7 +107,6 @@ namespace KRPC.Bridge.Actuators
             havePrevPredB = false;
             havePrevPredM = false;
             havePrevControlTorque = false;
-            havePrevEngineTorque = false;
             havePrevAuxTorque = false;
             havePrevAeroTorque = false;
             haveFilter = false;
@@ -466,7 +463,7 @@ namespace KRPC.Bridge.Actuators
             double[] aeroTorque = Finite3 (v3, DynamicsV3.StateAeroTorqueBody)
                 ? Slice3 (v3, DynamicsV3.StateAeroTorqueBody) : null;
 
-            // ----------------------------------------------------- INDI shadow (§10.8.7)
+            // ------------------------------------- INDI shadow (plan GNC 10.8, point 7)
             // Delta omega_dot measured at tick k, predictions for the increment captured at
             // tick k, residual of tick k against the prediction of tick k-1 (lag 1: the
             // actuator state read in FixedUpdate k acts during the physics step after it).
@@ -541,7 +538,7 @@ namespace KRPC.Bridge.Actuators
             // ---------------------------------------------- response to the last v2 frame
             var responseRows = new List<double> ();
             int responseRowCount = 0;
-            if (isActiveChannel) {
+            if (isActiveChannel && ResponseTracker.Follows (vessel.id)) {
                 ResponseTracker.Update (physicsTick);
                 responseRowCount = ResponseTracker.AppendRows (responseRows);
                 if (ResponseTracker.Tracking)
@@ -602,9 +599,6 @@ namespace KRPC.Bridge.Actuators
             x.havePrevControlTorque = controlTorque != null;
             if (controlTorque != null)
                 Copy3 (controlTorque, 0, x.prevControlTorque, 0);
-            x.havePrevEngineTorque = engineTorque != null;
-            if (engineTorque != null)
-                Copy3 (engineTorque, 0, x.prevEngineTorque, 0);
             x.havePrevAuxTorque = auxTorque != null;
             if (auxTorque != null)
                 Copy3 (auxTorque, 0, x.prevAuxTorque, 0);
@@ -986,6 +980,7 @@ namespace KRPC.Bridge.Actuators
         }
 
         static readonly List<Entry> entries = new List<Entry> ();
+        static Guid vesselId = Guid.Empty;
         static int sequence;
         static long applyTick;
         static bool pending;
@@ -994,9 +989,16 @@ namespace KRPC.Bridge.Actuators
             get { return entries.Count > 0 && applyTick > 0; }
         }
 
+        /// <summary>Rows belong to the vessel the frame was applied to, and to no other.</summary>
+        internal static bool Follows (Guid id)
+        {
+            return entries.Count > 0 && vesselId != Guid.Empty && vesselId == id;
+        }
+
         internal static void Clear ()
         {
             entries.Clear ();
+            vesselId = Guid.Empty;
             sequence = 0;
             applyTick = 0;
             pending = false;
@@ -1004,11 +1006,12 @@ namespace KRPC.Bridge.Actuators
 
         /// <summary>Baselines of every actuator of a frame about to be applied.</summary>
         internal static void BeforeApply (
-            int frameSequence,
+            Guid frameVesselId, int frameSequence,
             List<ActuatorsAddon.EngineFrameCommand> engines,
             List<ActuatorsAddon.GimbalFrameCommand> gimbals)
         {
             Clear ();
+            vesselId = frameVesselId;
             sequence = frameSequence;
             pending = true;
             for (int i = 0; engines != null && i < engines.Count; i++) {

@@ -362,7 +362,8 @@ namespace KRPC.Bridge.Actuators
             // written, so the first realized response of each actuator can be dated.
             bool trackResponse = DynamicsExt.Enabled;
             if (trackResponse)
-                ResponseTracker.BeforeApply (frame.Sequence, frame.Engines, frame.Gimbals);
+                ResponseTracker.BeforeApply (
+                    vessel.id, frame.Sequence, frame.Engines, frame.Gimbals);
 
             try {
                 for (int i = 0; i < frame.Engines.Count; i++)
