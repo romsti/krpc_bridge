@@ -74,7 +74,7 @@ namespace KRPC.Bridge.Actuators
         internal const int EngineStride = 20;
         internal const int GimbalStride = 19;
         internal const int TransformStride = 10;
-        internal const int HistoryCapacity = 300; // ~6 s at 50 Hz
+        internal const int HistoryCapacity = 1000; // ~20 s at 50 Hz; survives long GNC stalls during instrumentation
 
         // Capability bits.  Missing/unknown quantities remain NaN, never guessed.
         const long CapPosition = 1L << 0;
@@ -149,6 +149,7 @@ namespace KRPC.Bridge.Actuators
             serviceFlightBody = null;
             havePrevious = false;
             previousTick = 0;
+            AeroActuatorV1.Reset ();
         }
 
         internal static IList<double> ReadLatest ()
@@ -686,6 +687,12 @@ namespace KRPC.Bridge.Actuators
             history.AddLast (latest);
             while (history.Count > HistoryCapacity)
                 history.RemoveFirst ();
+
+            // Supplemental surface observability, captured in the SAME FixedUpdate
+            // but transported separately so DynamicsSnapshotV3/PDG2 schema stays stable.
+            try {
+                AeroActuatorV1.Capture (vessel, physicsTick);
+            } catch { }
 
             havePrevious = true;
             previousTick = physicsTick;
