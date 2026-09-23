@@ -114,6 +114,33 @@ namespace KRPC.Bridge.Actuators
                 }
 
                 var rows = new List<double> ();
+                int rowCount = BuildRows (vessel, rows);
+
+                var frame = new List<double> (HeaderStride + rows.Count) {
+                    ProtocolVersion,
+                    SchemaVersion,
+                    physicsTick,
+                    Planetarium.GetUniversalTime (),
+                    rowCount,
+                    RowStride
+                };
+                frame.AddRange (rows);
+                latest = frame.ToArray ();
+                latestTick = physicsTick;
+                history.AddLast (latest);
+                while (history.Count > HistoryCapacity)
+                    history.RemoveFirst ();
+            } catch {
+                // Pure observability: never perturb FixedUpdate or control.
+            }
+        }
+
+        /// <summary>
+        /// The rows of one capture (the body of Capture until QW6, unchanged), appended to
+        /// rows; returns the row count. Also called twice by dynamics_reflection_check_v1.
+        /// </summary>
+        internal static int BuildRows (Vessel vessel, List<double> rows)
+        {
                 int rowCount = 0;
                 for (int p = 0; p < vessel.parts.Count; p++) {
                     var part = vessel.parts [p];
@@ -172,24 +199,7 @@ namespace KRPC.Bridge.Actuators
                         rowCount++;
                     }
                 }
-
-                var frame = new List<double> (HeaderStride + rows.Count) {
-                    ProtocolVersion,
-                    SchemaVersion,
-                    physicsTick,
-                    Planetarium.GetUniversalTime (),
-                    rowCount,
-                    RowStride
-                };
-                frame.AddRange (rows);
-                latest = frame.ToArray ();
-                latestTick = physicsTick;
-                history.AddLast (latest);
-                while (history.Count > HistoryCapacity)
-                    history.RemoveFirst ();
-            } catch {
-                // Pure observability: never perturb FixedUpdate or control.
-            }
+                return rowCount;
         }
 
         static double AnimationOpenHint (object module)
@@ -261,7 +271,19 @@ namespace KRPC.Bridge.Actuators
             }
         }
 
+        /// <summary>
+        /// QW6: cached lookups (ReflectionCache.ReadFieldThenProperty), same members and
+        /// values as the legacy reader below, which stays for dynamics_reflection_check_v1.
+        /// </summary>
         static object ReadMember (object target, string[] names)
+        {
+            if (ReflectionCache.UseLegacy)
+                return ReadMemberLegacy (target, names);
+            return ReflectionCache.ReadFieldThenProperty (target, names);
+        }
+
+        /// <summary>The reader flown until QW6, verbatim (GetField/GetProperty at every read).</summary>
+        static object ReadMemberLegacy (object target, string[] names)
         {
             if (target == null)
                 return null;

@@ -42,7 +42,9 @@ namespace KRPC.Bridge.Actuators
             internal float TargetYDegrees;
             internal float AppliedXDegrees;
             internal float AppliedYDegrees;
-            internal float LastResponseAt;
+            // QW5 : dernier pas PHYSIQUE ou la rampe a avance (temps de jeu, plus de
+            // Time.realtimeSinceStartup).
+            internal long LastResponseTick;
             internal float ExpiresAt;
         }
 
@@ -78,6 +80,11 @@ namespace KRPC.Bridge.Actuators
 
         static long physicsTick;
         static long topologyGeneration;
+
+        /// <summary>Compteur de pas physiques de la Pump (lu par AttitudeV1 et la sonde d'ordre).</summary>
+        internal static long CurrentPhysicsTick {
+            get { return physicsTick; }
+        }
         static Guid observedVesselId = Guid.Empty;
         static ulong observedTopologyHash;
         static IList<double> lastSnapshot = new List<double> ();
@@ -144,7 +151,7 @@ namespace KRPC.Bridge.Actuators
                 if (!GimbalReady (pair.Key) || now >= pair.Value.ExpiresAt)
                     expiredGimbals.Add (pair.Key);
                 else
-                    ApplyGimbal (pair.Key, pair.Value, now);
+                    ApplyGimbal (pair.Key, pair.Value);
             }
             for (int i = 0; i < expiredGimbals.Count; i++)
                 RestoreGimbal (expiredGimbals [i]);
@@ -159,6 +166,15 @@ namespace KRPC.Bridge.Actuators
             DynamicsTracked.Pump (
                 physicsTick, controllerVesselId, lastAcceptedSequence,
                 lastAppliedSequence, lastAppliedTick, lastResult);
+
+            // AttitudeV1 (ombre, ne ferme) : temoin de vie de l'etage Earlyish et repli
+            // sur la Pump s'il ne tourne plus ; rend immediatement sans vaisseau arme.
+            // Apres les captures : le V3 de ce tick n'en depend pas.
+            try {
+                AttitudeV1.PumpWatch ();
+            } catch (Exception exc) {
+                BridgeLog.Error ("AttitudeV1.PumpWatch: " + exc.Message);
+            }
         }
 
         internal static void RequireLegacyControlAvailable ()
@@ -642,6 +658,7 @@ namespace KRPC.Bridge.Actuators
             DynamicsV3.Reset ();
             DynamicsTracked.ResetForScene ();
             ResponseTracker.Clear ();
+            AttitudeV1.ResetForScene ();
         }
 
         internal static void Command (ModuleEngines engine, float percentage, float leaseSeconds)
@@ -686,14 +703,14 @@ namespace KRPC.Bridge.Actuators
                     OriginalActuationLocal = gimbal.actuationLocal,
                     AppliedXDegrees = gimbal.actuationLocal.x,
                     AppliedYDegrees = gimbal.actuationLocal.y,
-                    LastResponseAt = Time.realtimeSinceStartup,
+                    LastResponseTick = physicsTick,
                     OriginalRotations = rotations
                 };
                 gimbalLeases.Add (gimbal, lease);
             }
 
             float now = Time.realtimeSinceStartup;
-            ApplyGimbal (gimbal, lease, now);
+            ApplyGimbal (gimbal, lease);
 
             float limiter = Math.Min (100f, Math.Max (0f, gimbal.gimbalLimiter)) * 0.01f;
             lease.TargetXDegrees = ClampDirectional (
@@ -706,7 +723,7 @@ namespace KRPC.Bridge.Actuators
             }
             lease.ExpiresAt = now + ClampLeaseSeconds (leaseSeconds);
             gimbal.gimbalActive = false;
-            ApplyGimbal (gimbal, lease, now);
+            ApplyGimbal (gimbal, lease);
         }
 
         internal static bool ReleaseGimbal (ModuleGimbal gimbal)
@@ -740,25 +757,33 @@ namespace KRPC.Bridge.Actuators
             engine.independentThrottle = lease.OriginalEnabled;
         }
 
-        static void ApplyGimbal (ModuleGimbal gimbal, GimbalLease lease, float now)
+        /// <summary>
+        /// QW5 (plan GNC v3) : la rampe du bail avance d'UN pas de Lerp stock par pas
+        /// physique, comme ModuleGimbal.FixedUpdate (Lerp(old, new, gimbalResponseSpeed *
+        /// TimeWarp.fixedDeltaTime)), quel que soit le rapport jeu/mur. L'ancienne rampe
+        /// integrait Time.realtimeSinceStartup : a 0,6x temps reel, le cardan loue allait
+        /// ~1,7x plus vite par pas que le stock. Plusieurs appels dans le meme pas (RPC +
+        /// Pump) n'avancent qu'une fois.
+        /// </summary>
+        static void ApplyGimbal (ModuleGimbal gimbal, GimbalLease lease)
         {
             gimbal.gimbalActive = false;
             if (gimbal.useGimbalResponseSpeed) {
-                float elapsed = Math.Max (0f, now - lease.LastResponseAt);
+                long elapsedTicks = Math.Max (0L, physicsTick - lease.LastResponseTick);
                 float fixedStep = Math.Max (0.001f, TimeWarp.fixedDeltaTime);
                 float perTick = Math.Min (
                     1f, Math.Max (0f, gimbal.gimbalResponseSpeed * fixedStep));
-                float factor = elapsed <= 0f ? 0f : (float)(1.0 - Math.Pow (
-                    1.0 - perTick, elapsed / fixedStep));
+                float factor = elapsedTicks <= 0L ? 0f : (float)(1.0 - Math.Pow (
+                    1.0 - perTick, elapsedTicks));
                 lease.AppliedXDegrees +=
                     (lease.TargetXDegrees - lease.AppliedXDegrees) * factor;
                 lease.AppliedYDegrees +=
                     (lease.TargetYDegrees - lease.AppliedYDegrees) * factor;
-                lease.LastResponseAt = now;
+                lease.LastResponseTick = physicsTick;
             } else if (!gimbal.useGimbalResponseSpeed) {
                 lease.AppliedXDegrees = lease.TargetXDegrees;
                 lease.AppliedYDegrees = lease.TargetYDegrees;
-                lease.LastResponseAt = now;
+                lease.LastResponseTick = physicsTick;
             }
             gimbal.actuationLocal = new Vector3 (
                 lease.AppliedXDegrees, lease.AppliedYDegrees, 0f);

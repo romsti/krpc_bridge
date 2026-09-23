@@ -65,6 +65,9 @@ namespace UnityEngine
         public static float realtimeSinceStartup { get { return 0f; } }
         public static float time { get { return 0f; } }
         public static float fixedDeltaTime { get { return 0.02f; } }
+        // Real: UnityEngine.Time.fixedTime (float) and frameCount (int).
+        public static float fixedTime { get { return 0f; } }
+        public static int frameCount { get { return 0; } }
     }
 
     // The Trajectories plugin unboxes the mod's Vector3? results. Never crosses the kRPC
@@ -87,6 +90,8 @@ namespace UnityEngine
 
     public struct Quaternion
     {
+        // Real: public float x, y, z, w (read directly by the QW6 fast path).
+        public float x, y, z, w;
         public static Quaternion identity { get { return new Quaternion (); } }
         public static Quaternion AngleAxis (float angle, Vector3 axis) { return new Quaternion (); }
         public static Quaternion Inverse (Quaternion rotation) { return rotation; }
@@ -100,6 +105,7 @@ namespace UnityEngine
         public Vector3 position { get { return Vector3.zero; } }
         public Vector3 forward { get { return Vector3.forward; } }
         public Vector3 up { get { return Vector3.up; } }
+        public Vector3 right { get { return Vector3.right; } }
         public Quaternion rotation { get { return new Quaternion (); } }
         public Transform parent { get { return null; } }
         public Vector3 InverseTransformDirection (Vector3 direction) { return direction; }
@@ -165,6 +171,12 @@ public class Vessel : UnityEngine.MonoBehaviour
     public float totalMass;
     public List<Part> parts = new List<Part> ();
     public double missionTime;
+    // KSP 1.12.5 (ksp_knowledge, installed Assembly-CSharp): public FIELDS.
+    // angularVelocity is in the vessel BODY frame, MOI is the body diagonal in t.m^2.
+    public UnityEngine.Vector3 angularVelocity;
+    public UnityEngine.Vector3 MOI;
+    public FlightCtrlState ctrlState = new FlightCtrlState ();
+    public FlightInputCallback OnFlyByWire;
     public Orbit orbit;
     public PatchedConicSolver patchedConicSolver;
     public CelestialBody mainBody { get { return null; } }
@@ -189,10 +201,52 @@ public class PatchedConicSolver
     public List<ManeuverNode> maneuverNodes = new List<ManeuverNode> ();
 }
 
+// Real: public class FlightCtrlState : IConfigNode, float fields pitch/yaw/roll/mainThrottle...
+public class FlightCtrlState
+{
+    public float pitch;
+    public float yaw;
+    public float roll;
+    public float mainThrottle;
+}
+
+// Real: public delegate void FlightInputCallback(FlightCtrlState st).
+public delegate void FlightInputCallback (FlightCtrlState st);
+
+public class FlightInputHandler : UnityEngine.MonoBehaviour
+{
+    public static FlightInputHandler fetch;
+    public bool precisionMode;
+}
+
+// Real: ITorqueProvider.GetPotentialTorque(out Vector3 pos, out Vector3 neg), kN.m.
+public interface ITorqueProvider
+{
+    void GetPotentialTorque (out UnityEngine.Vector3 pos, out UnityEngine.Vector3 neg);
+}
+
+// Real: TimingManager (MonoBehaviour) with nested TimingStage and UpdateAction;
+// FixedUpdateAdd/Remove are static and silently return while Instance is null.
+public class TimingManager : UnityEngine.MonoBehaviour
+{
+    public enum TimingStage
+    {
+        ObscenelyEarly, Early, Precalc, Earlyish, Normal, FashionablyLate,
+        FlightIntegrator, Late, BetterLateThanNever
+    }
+
+    public delegate void UpdateAction ();
+
+    public static TimingManager Instance { get { return null; } }
+    public static void FixedUpdateAdd (TimingStage stage, UpdateAction action) { }
+    public static void FixedUpdateRemove (TimingStage stage, UpdateAction action) { }
+}
+
 public class Part : UnityEngine.MonoBehaviour
 {
     public Vessel vessel;
     public uint flightID;
+    public bool ShieldedFromAirstream { get; set; }
     public AvailablePart partInfo;
     public double temperature;
     public double maxTemp;
@@ -242,7 +296,7 @@ public class ModuleEngines : PartModule
         float atmPressure = 1f, double atmTemp = 310.0, double atmDensity = 1.225000023841858) { return 0f; }
 }
 
-public class ModuleRCS : PartModule
+public class ModuleRCS : PartModule, ITorqueProvider
 {
     public List<UnityEngine.Transform> thrusterTransforms = new List<UnityEngine.Transform> ();
     public float[] thrustForces = new float[0];
@@ -252,18 +306,50 @@ public class ModuleRCS : PartModule
     public bool rcs_active;
     public float thrusterPower;
     public float realISP;
+    // KSP 1.12.5 fields read by AttitudeGeometry (CalculateThrust and FixedUpdate terms).
+    public bool requiresFuel;
+    public double flowMult;
+    public double maxFuelFlow;
+    public float thrustPercentage;
+    public double G;
+    public double ispMult;
+    public bool enablePitch;
+    public bool enableRoll;
+    public bool enableYaw;
+    public bool fullThrust;
+    public bool shieldedCanThrust;
+    public void GetPotentialTorque (out UnityEngine.Vector3 pos, out UnityEngine.Vector3 neg)
+    {
+        pos = UnityEngine.Vector3.zero;
+        neg = UnityEngine.Vector3.zero;
+    }
 }
 
-public class ModuleReactionWheel : PartModule
+public class ModuleReactionWheel : PartModule, ITorqueProvider
 {
     public enum WheelState { Active, Disabled, Broken }
     public WheelState wheelState;
     public bool operational;
     public UnityEngine.Vector3 inputVector;
+    public float PitchTorque;
+    public float RollTorque;
+    public float YawTorque;
+    public float authorityLimiter;
+    public int actuatorModeCycle;
+    public void GetPotentialTorque (out UnityEngine.Vector3 pos, out UnityEngine.Vector3 neg)
+    {
+        pos = UnityEngine.Vector3.zero;
+        neg = UnityEngine.Vector3.zero;
+    }
 }
 
-public class ModuleControlSurface : PartModule
+public class ModuleControlSurface : PartModule, ITorqueProvider
 {
+    public void GetPotentialTorque (out UnityEngine.Vector3 pos, out UnityEngine.Vector3 neg)
+    {
+        pos = UnityEngine.Vector3.zero;
+        neg = UnityEngine.Vector3.zero;
+    }
     public float ctrlSurfaceRange;
     public float authorityLimiter;
     public bool deploy;
@@ -306,6 +392,8 @@ public class ModuleGimbal : PartModule
 public static class TimeWarp
 {
     public static float fixedDeltaTime { get { return 0.02f; } }
+    // Real: public static float CurrentRate { get; } (1 without warp).
+    public static float CurrentRate { get { return 1f; } }
 }
 
 public static class FlightGlobals
@@ -531,7 +619,11 @@ namespace KRPC.Service.Messages
 
 namespace KRPC.SpaceCenter.Services
 {
-    public class ReferenceFrame { }
+    // Installed KRPC.SpaceCenter 0.6.0.0: public Vector3d DirectionToWorldSpace(Vector3d).
+    public class ReferenceFrame
+    {
+        public Vector3d DirectionToWorldSpace (Vector3d direction) { return direction; }
+    }
 
     public class Flight
     {

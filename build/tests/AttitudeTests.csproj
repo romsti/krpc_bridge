@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure-maths tests of AttitudeV1, with no KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/AttitudeTests.csproj   (double hyphen)
+
+    It compiles src/Plugins/Actuators/AttitudeMath.cs directly (that file uses System
+    only, so the law is tested exactly as the plugin compiles it) and checks:
+      * the bounded weighted least squares against a brute-force QP on random draws;
+      * the square-root reference: bounded, monotone, odd;
+      * the pseudo-control hedge: grows under saturation, leaks back to zero;
+      * the H(z) low-pass: unit DC gain, rejects the Nyquist rate;
+      * the pointing error on known geometry.
+    It then writes golden vectors (JSON) that the Python mirror of the law replays
+    (ksp autopilot: tests/test_attitude_c_miroir.py): same inputs, same outputs.
+
+    Exit code 0 means every check passed. build.cmd runs it before the solution build.
+    BridgeUseStubs keeps Directory.Build.targets from adding the KSP references.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.AttitudeTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Actuators</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+    <!-- CS0649: ReflectionCache.UseLegacy is only set by DynamicsV3, absent here. -->
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="ReflectionTests.cs" />
+    <Compile Include="..\..\src\Plugins\Actuators\AttitudeMath.cs" />
+    <Compile Include="..\..\src\Plugins\Actuators\ReflectionCache.cs" />
+  </ItemGroup>
+
+</Project>

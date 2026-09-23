@@ -308,6 +308,14 @@ within at most one second.
 | `tracked_vessels_v3()` | `list[float]` | The tracked-vessel registry. |
 | `tracked_dynamics_snapshot_v3(persistent_id)`, `tracked_dynamics_frames_v3(persistent_id, since_tick=0, max_frames=64)`, `tracked_dynamics_ext_frames_v1(persistent_id, since_tick=0, max_frames=64)` | `list[float]` | v3 / DynamicsExtV1 frames of one tracked vessel, [below](#tracked-vessels-by-persistentid). |
 | `simulate_aerodynamic_wrench_batch_v1(states, non_rotating_frame=True, persistent_id="")` | `list[float]` | Up to 32 `Flight.simulate_aerodynamic_wrench_at` evaluations in one call, [below](#batched-aerodynamic-wrench). Read-only. |
+| `dynamics_reflection_check_v1()` | `list[float]` | QW6 identity check: the active vessel's v3 frame and aero-actuator rows captured through the legacy and the cached reflection readers, compared bit for bit, [below](#reflection-cache-qw6). Read-only. |
+| `attitude_protocol_version` | `int` | `1`, the protocol of the AttitudeV1 frames and status. |
+| `attitude_arm_v1(persistent_id, owner, lease_seconds=1, mode=0, axes_mask=3)` | `str` | Arms the AttitudeV1 **shadow** loop for one loaded vessel (active or not), [below](#attitudev1-physics-rate-attitude-loop-shadow). Returns a token. |
+| `attitude_reference_v1(token, sequence, frame, dir_x, dir_y, dir_z, roll_mode, omega_ff_x, omega_ff_y, omega_ff_z, ut_stamp, ut_valid_until, omega_max)` | `int` | One reference per GNC tick (the AutoPilot's own). `1` accepted, `0` ignored. Renews the lease. |
+| `attitude_renew_v1(token, lease_seconds=1)` / `attitude_release_v1(token)` | `bool` | Renews (0.2–10 s) or drops an armed vessel. |
+| `attitude_status_v1()` | `list[float]` | Hook state and one row per armed vessel. Streamable. |
+| `attitude_frames_v1(persistent_id, since_tick=0, max_frames=64)` | `list[float]` | AttitudeV1 frames of one armed vessel, v3 history layout. |
+| `attitude_order_probe_v1(frames=50)` / `attitude_order_probe_read_v1()` | `bool` / `list[float]` | T-sol-0 order probe: which stage runs first in a physics step. Read-only. |
 
 `thrust_limit` and independent throttle are different controls. The former is a ceiling
 already exposed by stock kRPC's `Engine.thrust_limit`; the latter makes one engine stop
@@ -750,6 +758,144 @@ states in one call.
   only.
 
 Each state walks every part's drag cubes on the Unity thread; keep the batches small.
+
+### Reflection cache (QW6)
+
+The v3 capture and `AeroActuatorV1` read a few KSP members by reflection every physics
+tick. Until this build, the v3 reader built the key `AssemblyQualifiedName + "|" + name` on
+every access (about thirty per tick) and the aero reader called `GetField` /
+`GetProperty` / `GetIndexParameters` for every module at every tick. Both now resolve a
+member once per (runtime type, name), with the same resolution order and binding flags,
+and bind property getters to a delegate once. A Unity `Quaternion` is read directly instead
+of by four reflective reads. The values are the same objects, so the frames are the same
+bytes.
+
+`dynamics_reflection_check_v1()` proves it on the real vessel: it captures the active
+vessel's v3 frame and aero rows twice in one call, through the legacy readers (kept
+verbatim) and through the cache, into scratch buffers (no ring is touched), and returns
+`protocol (1), v3_length, v3_mismatches, first_v3_mismatch (-1 if none), aero_length,
+aero_mismatches, first_aero_mismatch, legacy_capture_us, cached_capture_us` (mean of five
+alternated captures each). Expect zero mismatches. `build/tests` runs the same comparison
+on synthetic types, with copies of the legacy readers, at every build.
+
+### AttitudeV1 (physics-rate attitude loop, shadow)
+
+`AttitudeV1` is the attitude loop of plan GNC v3 step M2, **in shadow**: it computes and
+publishes, it writes **no actuator**. `attitude_arm_v1(..., mode=1)` is refused by this
+build.
+
+**Placement and cadence.** A `TimingManager` callback at stage `Earlyish`, added when the
+first vessel is armed and removed with the last one (or at scene exit). A witness counts its
+calls; if the watcher `FixedUpdate` sees no `Earlyish` call for three physics steps, it runs
+the attitude tick itself and every such frame says so (stage `2`, motif bit 11). Where
+`Earlyish` falls relative to `ModuleEngines`, `ModuleGimbal`, `FlightInputHandler` and
+`Planetarium` inside one step is measured by the order probe below, not assumed.
+
+**Per armed vessel** (by `persistentId`, active or not, at most two), each physics step:
+- ω = `Vessel.angularVelocity` (body), I = diag(`Vessel.MOI`) × 1000, ω̇ = Δω / Δt on
+  consecutive ticks, else the filters restart;
+- realized torque M = engines (Σ r × F per nozzle, `finalThrust`) + RCS
+  (`thrustForces`) + reaction wheels (−`inputVector`);
+- columns B: two per gimbal module (N·m/deg, the DynamicsExtV1 derivation at the realized
+  deflection) and the ctrlState channel, three commands (pitch, roll, yaw) = RCS (the stock
+  `ModuleRCS.FixedUpdate` thrust law evaluated per unit command, positive and negative
+  separately) + reaction wheels (−torque × authority) + control surfaces
+  (`GetPotentialTorque` magnitudes, stock sign; approximate, flagged);
+- the law of `AttitudeMath.cs`: same 2nd-order low-pass H(z) (18 rad/s, ζ 0.7) on ω̇ and
+  M; square-root reference toward the target direction, saturated at `omega_max`, plus
+  the feed-forward rate, minus the pseudo-control hedge; ν = K_ω (ω_r − ω) bounded by the
+  current authority α; torque-form INDI M_d = M_f + I (ν − ω̇_f); bounded weighted least
+  squares (active set, warm start) of the increment that brings M to M_d; the unrealizable
+  part feeds the hedge. Roll is rate damping only. The Python mirror
+  (`guidance/attitude_c_loi.py` in the autopilot) replays golden vectors from
+  `build/tests` exactly.
+
+**Reference.** `attitude_reference_v1` carries what the client gives the kRPC AutoPilot:
+a kRPC `ReferenceFrame` and a direction in it (converted to world with
+`ReferenceFrame.DirectionToWorldSpace` at every tick, as the AutoPilot does), roll mode
+`0` (rate damping, `target_roll` NaN), a feed-forward rate in the same frame, the UT of the
+guidance state it came from, a validity UT, and the AutoPilot's `max_angular_velocity`
+(0 = its default, 1 rad/s). `sequence` must increase. A reference past `ut_valid_until` is
+not used (motif bit 2). An accepted reference renews the real-time lease; an expired lease
+disarms the vessel (the client re-arms).
+
+**Frame** (`attitude_frames_v1`, v3 history layout, 1000-frame ring per vessel): a
+24-double header, a 79-double state block, then one row of 16 doubles per actuator column.
+
+| Header offset | Meaning |
+|---:|---|
+| 0–1 | protocol (`1`), schema (`1`) |
+| 2 | attitude tick (+1 per attitude step; the ring key) |
+| 3–4 | UT, fixed delta time |
+| 5–6 | vessel persistent id, topology generation (of this vessel) |
+| 7 | stage: `1` Earlyish, `2` watcher fallback |
+| 8–9 | Actuators pump physics tick seen, `Time.fixedTime` (to join with v3) |
+| 10–11 | mode (`0` shadow), axes mask |
+| 12 | motif bits (below) |
+| 13–15 | consumed reference sequence, its `ut_stamp`, transport delay UT − `ut_stamp` (s) |
+| 16 | cost of the tick, microseconds (measurement + law + allocation) |
+| 17–18 | allocation iterations, converged |
+| 19 | actuator column count n |
+| 20–22 | state stride (`79`), row count (n), row stride (`16`) |
+| 23 | capability bits: 0 engine torque, 1 RCS torque, 2 wheel torque, 3 gimbal columns, 4 RCS columns, 5 wheel columns, 6 surface columns, 7 reference, 8 law ran |
+
+State block (body frame: x right = pitch, y nose = roll, z bottom = yaw):
+
+| Offsets | Field |
+|---:|---|
+| 0–2 | pointing error rotation vector e (rad) |
+| 3–5, 6–8 | ω (rad/s), measured ω̇ (rad/s²) |
+| 9–11 | filtered ω̇_f |
+| 12–14 | authority α per axis (rad/s²) |
+| 15–17, 18–20, 21–23 | square-root rate, reference rate ω_r, hedge rate ω_pch |
+| 24–26 | pseudo-control ν (rad/s²) |
+| 27–29 | inertia diagonal (kg·m²) |
+| 30–32, 33–35 | realized torque M, filtered M_f (N·m) |
+| 36–38, 39–41 | ΔM_d = I (ν − ω̇_f), wanted torque M_d = M_f + ΔM_d |
+| 42–44, 45–47 | allocation target M_d − M, allocated B·Δu |
+| 48–50 | unrealizable part ν_h (rad/s²) |
+| 51–53, 54–56 | INDI residual Δω̇_f − I⁻¹ΔM_f, and its first-order filter (0.2 s) |
+| 57–59 | target direction in the body frame |
+| 60–62 | served ctrlState (pitch, roll, yaw) read from the vessel |
+| 63–65 | feed-forward rate, body frame |
+| 66 | ω_max used |
+| 67–68 | saturated fraction, active bounds |
+| 69 | guards: 1 residual > 0.5 α for 1 s, 2 \|ω\| > 1.5 ω_max, 4 > 50 % saturated for 1 s |
+| 70–72, 73–75, 76–78 | RCS, wheel, engine torque (N·m) |
+
+Quantities of the law are NaN when it did not run; the filtered ones (9–14, 33–35, 51–56)
+exist whenever the tick is consecutive, even without a reference.
+
+Actuator rows: `kind (1 gimbal, 3 ctrlState), flight_id, ordinal, axis, u0, du, u_min,
+u_max, active_set (0 free, -1 lower, 1 upper, 2 fixed), b_pos_xyz, b_neg_xyz, priority`.
+Gimbal rows: axis 0 = δx, 1 = δy, u in degrees, `b_pos` = `b_neg` = the column (N·m/deg).
+ctrlState rows: axis 0 pitch, 1 roll, 2 yaw, u in [−1, 1], `b_pos` the torque per unit of a
+positive command, `b_neg` per unit of a negative one; the least squares uses their mean.
+`u0` is the realized deflection or the served ctrlState; `u0 + du` is what the loop WOULD
+command.
+
+Motif bits: 0 lease expired, 1 no reference, 2 reference stale, 3 physics warp (Δt ≠ 0.02 or
+rate ≠ 1), 4 tick gap (filters restarted), 5 unloaded or packed, 6 topology changed,
+7 residual guard, 8 ω guard, 9 saturation guard, 10 exception, 11 Earlyish dead (watcher
+fallback), 12 frame conversion failed, 13 RCS model approximate (precision mode or
+`fullThrust`), 14 control-surface columns used (approximate), 15 allocation not converged.
+Bits 7–9 are what WOULD make an armed loop fall back to the AutoPilot.
+
+`attitude_status_v1()` returns `protocol, schema, count, stride (16), earlyish_registered,
+earlyish_calls, fallback_ticks, attitude_tick, ut`, then per vessel `persistent_id, mode,
+axes_mask, lease_remaining_s, loaded, last_motif, sequence, consumed_sequence,
+reference_age_s, latest_tick, history_count, computed_ticks, exceptions, cost_last_us,
+cost_max_us, accepted_references`.
+
+**Order probe (T-sol-0).** `attitude_order_probe_v1(frames)` stamps, for the next `frames`
+physics steps (1–300), every call of the `Precalc`, `Earlyish`, `Normal`,
+`FlightIntegrator`, `Late` and `BetterLateThanNever` stages, of the Actuators watcher and of
+the active vessel's `OnFlyByWire` chain (read-only). `attitude_order_probe_read_v1()`
+returns `version (1), armed, row_count, stride (13)` then `frame, call_index, stage (1
+precalc, 2 earlyish, 3 normal, 4 integrator, 5 late, 6 better-late, 7 watcher, 8
+fly-by-wire), fixed_time, ut, pump_tick, render_frame, served_pitch, first_gimbal_x,
+first_engine_thrust, omega_x, first_rcs_thrust_sum, real_time`. A value that changes
+between two stages of the same step names the module that ran in between.
 
 ---
 

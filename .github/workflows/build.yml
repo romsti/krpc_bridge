@@ -34,6 +34,9 @@ jobs:
       - name: Compile every source file against the stubs
         run: dotnet build build/verify/Verify.csproj -v minimal --nologo
 
+      - name: AttitudeV1 maths and reflection-cache tests (no KSP needed)
+        run: dotnet run --project build/tests/AttitudeTests.csproj -c Release
+
       - name: Compile the signature scanner
         # Not run - it needs a KSP install - but a scanner that does not compile is
         # a scanner nobody runs.

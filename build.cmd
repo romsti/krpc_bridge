@@ -45,6 +45,13 @@ dotnet build "%REPO%build\verify\Verify.csproj" -v minimal --nologo
 if errorlevel 1 goto :failed
 
 echo.
+echo === 1b/4 AttitudeV1 maths + reflection-cache tests (no KSP needed) ===
+rem  WLS against a brute-force QP, reference/hedge/filter properties, QW6 readers against
+rem  the legacy ones; rewrites build\tests\golden\attitude_v1_golden.json (deterministic).
+dotnet run --project "%REPO%build\tests\AttitudeTests.csproj" -c Release -v quiet
+if errorlevel 1 goto :failed
+
+echo.
 echo === 2/4  locating KSP ===
 if not "%KSP%"=="" (
   rem  An explicit path wins, and is remembered so this is the last time you type it.

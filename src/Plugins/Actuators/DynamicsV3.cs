@@ -52,6 +52,20 @@ namespace KRPC.Bridge.Actuators
         {
             return DynamicsV3.ReadStatus ();
         }
+
+        /// <summary>
+        /// QW6 identity check, read-only: captures the active vessel's v3 frame and its
+        /// aero-actuator rows twice in this call, through the legacy reflection readers and
+        /// through the cache, and compares the doubles bit for bit. Returns protocol (1),
+        /// v3 length, v3 mismatches, first v3 mismatch (-1), aero length, aero mismatches,
+        /// first aero mismatch (-1), legacy and cached capture cost (microseconds, mean of
+        /// five). Nothing is written to the rings.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<double> DynamicsReflectionCheckV1 ()
+        {
+            return DynamicsV3.ReflectionCheck ();
+        }
     }
 
     /// <summary>
@@ -810,6 +824,81 @@ namespace KRPC.Bridge.Actuators
                 Copy3 (angularVelocity, ch.previousAngularVelocity);
         }
 
+        /// <summary>Body of DynamicsReflectionCheckV1. Scratch channels only; no ring is touched.</summary>
+        internal static IList<double> ReflectionCheck ()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || !vessel.loaded)
+                throw new InvalidOperationException ("aucun vaisseau actif et charge");
+            long tick = ActuatorsAddon.CurrentPhysicsTick;
+            bool previous = ReflectionCache.UseLegacy;
+            double[] legacyFrame, cachedFrame;
+            List<double> legacyAero = new List<double> (), cachedAero = new List<double> ();
+            double legacyMicros = 0.0, cachedMicros = 0.0;
+            try {
+                // Identity: one capture per path, fresh channels, same tick and inputs.
+                ReflectionCache.UseLegacy = true;
+                var a = new DynamicsChannel ();
+                CaptureInto (a, vessel, tick, 0, 0, 0, 0, 0, false);
+                AeroActuatorV1.BuildRows (vessel, legacyAero);
+                ReflectionCache.UseLegacy = false;
+                var b = new DynamicsChannel ();
+                CaptureInto (b, vessel, tick, 0, 0, 0, 0, 0, false);
+                AeroActuatorV1.BuildRows (vessel, cachedAero);
+                legacyFrame = a.latest;
+                cachedFrame = b.latest;
+                // Cost: five alternated captures per path, caches already warm.
+                var scratch = new DynamicsChannel ();
+                for (int k = 0; k < 5; k++) {
+                    ReflectionCache.UseLegacy = true;
+                    long t0 = System.Diagnostics.Stopwatch.GetTimestamp ();
+                    scratch.Reset ();
+                    CaptureInto (scratch, vessel, tick, 0, 0, 0, 0, 0, false);
+                    long t1 = System.Diagnostics.Stopwatch.GetTimestamp ();
+                    ReflectionCache.UseLegacy = false;
+                    scratch.Reset ();
+                    CaptureInto (scratch, vessel, tick, 0, 0, 0, 0, 0, false);
+                    long t2 = System.Diagnostics.Stopwatch.GetTimestamp ();
+                    legacyMicros += (t1 - t0) * 1e6 / System.Diagnostics.Stopwatch.Frequency / 5.0;
+                    cachedMicros += (t2 - t1) * 1e6 / System.Diagnostics.Stopwatch.Frequency / 5.0;
+                }
+            } finally {
+                ReflectionCache.UseLegacy = previous;
+            }
+            int firstV3;
+            int mismatchV3 = CompareBits (legacyFrame, cachedFrame, out firstV3);
+            int firstAero;
+            int mismatchAero = CompareBits (legacyAero.ToArray (), cachedAero.ToArray (), out firstAero);
+            return new List<double> {
+                1.0,
+                cachedFrame.Length,
+                mismatchV3,
+                firstV3,
+                cachedAero.Count,
+                mismatchAero,
+                firstAero,
+                legacyMicros,
+                cachedMicros
+            };
+        }
+
+        /// <summary>Doubles compared by their 64 bits (NaN equals the same NaN).</summary>
+        internal static int CompareBits (double[] a, double[] b, out int first)
+        {
+            first = -1;
+            int mismatches = Math.Abs (a.Length - b.Length);
+            if (mismatches > 0)
+                first = Math.Min (a.Length, b.Length);
+            for (int i = 0; i < Math.Min (a.Length, b.Length); i++) {
+                if (BitConverter.DoubleToInt64Bits (a [i]) != BitConverter.DoubleToInt64Bits (b [i])) {
+                    mismatches++;
+                    if (first < 0 || i < first)
+                        first = i;
+                }
+            }
+            return mismatches;
+        }
+
         internal static double[] NewNaNArray (int count)
         {
             var values = new double[count];
@@ -1051,7 +1140,26 @@ namespace KRPC.Bridge.Actuators
                 : double.NaN;
         }
 
+        /// <summary>
+        /// QW6: cached reflection (ReflectionCache), same members and same values as the
+        /// legacy reader below, which stays for dynamics_reflection_check_v1.
+        /// </summary>
         static object ReadMember (object target, string[] names)
+        {
+            if (ReflectionCache.UseLegacy)
+                return ReadMemberLegacy (target, names);
+            return ReflectionCache.ReadPropertyThenField (target, names);
+        }
+
+        static object InvokeZeroArg (object target, string[] names)
+        {
+            if (ReflectionCache.UseLegacy)
+                return InvokeZeroArgLegacy (target, names);
+            return ReflectionCache.InvokeZeroArg (target, names);
+        }
+
+        /// <summary>The reader flown until QW6, verbatim. Reference of the identity check.</summary>
+        static object ReadMemberLegacy (object target, string[] names)
         {
             if (target == null)
                 return null;
@@ -1084,7 +1192,8 @@ namespace KRPC.Bridge.Actuators
             return null;
         }
 
-        static object InvokeZeroArg (object target, string[] names)
+        /// <summary>The method reader flown until QW6, verbatim.</summary>
+        static object InvokeZeroArgLegacy (object target, string[] names)
         {
             if (target == null)
                 return null;
@@ -1153,6 +1262,17 @@ namespace KRPC.Bridge.Actuators
             quaternion = null;
             if (value == null)
                 return false;
+            // QW6: a Unity Quaternion is read directly instead of four reflective reads of
+            // its x/y/z/w fields. Same widening float -> double, same finiteness rule as
+            // TryDouble, so the same doubles (or the same refusal) come out.
+            if (!ReflectionCache.UseLegacy && value is Quaternion) {
+                var q = (Quaternion)value;
+                double qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+                if (!IsFinite3 (new[] { qx, qy, qz }) || double.IsNaN (qw) || double.IsInfinity (qw))
+                    return false;
+                quaternion = new[] { qx, qy, qz, qw };
+                return true;
+            }
             double x, y, z, w;
             if (TryDouble (ReadMember (value, new[] { "x" }), out x) &&
                     TryDouble (ReadMember (value, new[] { "y" }), out y) &&

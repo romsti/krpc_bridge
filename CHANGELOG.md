@@ -1,3 +1,35 @@
+# Unreleased — plan GNC v3, chantier 1: AttitudeV1 in shadow, QW5, QW6
+
+- New `AttitudeV1` (Actuators plugin), the physics-rate attitude loop of plan GNC v3 step
+  M2, **in shadow and born closed**: armed per vessel by `persistentId` (active or not, at
+  most two) with `attitude_arm_v1`, it runs at every `FixedUpdate` in the `TimingManager`
+  `Earlyish` stage (watcher fallback if that stage stops), measures the realized engine,
+  RCS and wheel torques, builds the gimbal and ctrlState-channel (RCS, wheels, control
+  surfaces) effectiveness columns, and runs the law of `AttitudeMath.cs` (square-root
+  reference + pseudo-control hedge, torque-form INDI on the realized torques, bounded
+  weighted least squares). It publishes the wanted torque, the allocation that it WOULD
+  command and the residuals in a 1000-frame ring (`attitude_frames_v1`). It writes no
+  actuator; the armed mode is refused by this build.
+- `attitude_reference_v1`: one reference per GNC tick, the kRPC AutoPilot's own (kRPC
+  `ReferenceFrame` + direction, roll rate damping, UT stamp and validity, max rate);
+  `attitude_status_v1` (streamable), `attitude_renew_v1`, `attitude_release_v1`.
+- T-sol-0 order probe (`attitude_order_probe_v1` / `_read_v1`): which TimingManager stage,
+  the watcher and the fly-by-wire chain run first inside one physics step, and what each
+  sees. Read-only.
+- QW5: the leased gimbal ramp advances one stock `Lerp` step per PHYSICS tick
+  (`gimbalResponseSpeed * TimeWarp.fixedDeltaTime`) instead of integrating real time; at
+  0.6x real time the leased gimbal was ~1.7x faster per tick than the stock one.
+- QW6: reflection of the v3 capture and of `AeroActuatorV1` cached per (type, name), with
+  compiled property getters and a direct Unity `Quaternion` read; same members, same values.
+  `dynamics_reflection_check_v1` compares both paths bit for bit on the live vessel, and
+  `build/tests` on synthetic types.
+- New `build/tests` harness (no KSP): the allocation against a brute-force QP on 1500
+  random problems, reference/hedge/filter properties, the reflection cache against the
+  legacy readers, and golden vectors replayed by the Python mirror of the law. `build.cmd`
+  and CI run it.
+- DynamicsSnapshotV3 and DynamicsExtV1 layouts are unchanged; no flight-guidance behaviour
+  changes while AttitudeV1 is not armed.
+
 # Unreleased — plan GNC P5: DynamicsExtV1, tracked vessels, Q7 frames
 
 - Documented, from the decompiled KSP 1.12.5 source and three flights, that the v3
