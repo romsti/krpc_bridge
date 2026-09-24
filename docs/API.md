@@ -310,8 +310,9 @@ within at most one second.
 | `simulate_aerodynamic_wrench_batch_v1(states, non_rotating_frame=True, persistent_id="")` | `list[float]` | Up to 32 `Flight.simulate_aerodynamic_wrench_at` evaluations in one call, [below](#batched-aerodynamic-wrench). Read-only. |
 | `dynamics_reflection_check_v1()` | `list[float]` | QW6 identity check: the active vessel's v3 frame and aero-actuator rows captured through the legacy and the cached reflection readers, compared bit for bit, [below](#reflection-cache-qw6). Read-only. |
 | `attitude_protocol_version` | `int` | `1`, the protocol of the AttitudeV1 frames and status. |
-| `attitude_arm_v1(persistent_id, owner, lease_seconds=1, mode=0, axes_mask=3)` | `str` | Arms the AttitudeV1 **shadow** loop for one loaded vessel (active or not), [below](#attitudev1-physics-rate-attitude-loop-shadow). Returns a token. |
-| `attitude_reference_v1(token, sequence, frame, dir_x, dir_y, dir_z, roll_mode, omega_ff_x, omega_ff_y, omega_ff_z, ut_stamp, ut_valid_until, omega_max)` | `int` | One reference per GNC tick (the AutoPilot's own). `1` accepted, `0` ignored. Renews the lease. |
+| `attitude_arm_v1(persistent_id, owner, lease_seconds=1, mode=0, axes_mask=3)` | `str` | Arms the AttitudeV1 loop for one loaded vessel (active or not), [below](#attitudev1-physics-rate-attitude-loop-shadow-and-armed-roll): `mode=0` shadow, `mode=1` armed, accepted with `axes_mask=1` (roll) only. Returns a token. |
+| `attitude_reference_v1(token, sequence, frame, dir_x, dir_y, dir_z, roll_mode, omega_ff_x, omega_ff_y, omega_ff_z, ut_stamp, ut_valid_until, omega_max)` | `int` | One reference per GNC tick (the AutoPilot's own). `1` accepted, `0` ignored. Renews the lease. Never allows a write. |
+| `attitude_reference_v2(token, sequence, frame, dir_x, dir_y, dir_z, roll_mode, omega_ff_x, omega_ff_y, omega_ff_z, ut_stamp, ut_valid_until, omega_max_x, omega_max_y, omega_max_z, write_mask)` | `int` | V1 plus the AutoPilot's limit per body axis (per-axis ω guard) and the write permission of this reference (`1` roll). |
 | `attitude_renew_v1(token, lease_seconds=1)` / `attitude_release_v1(token)` | `bool` | Renews (0.2–10 s) or drops an armed vessel. |
 | `attitude_status_v1()` | `list[float]` | Hook state and one row per armed vessel. Streamable. |
 | `attitude_frames_v1(persistent_id, since_tick=0, max_frames=64)` | `list[float]` | AttitudeV1 frames of one armed vessel, v3 history layout. |
@@ -778,11 +779,13 @@ aero_mismatches, first_aero_mismatch, legacy_capture_us, cached_capture_us` (mea
 alternated captures each). Expect zero mismatches. `build/tests` runs the same comparison
 on synthetic types, with copies of the legacy readers, at every build.
 
-### AttitudeV1 (physics-rate attitude loop, shadow)
+### AttitudeV1 (physics-rate attitude loop, shadow and armed roll)
 
-`AttitudeV1` is the attitude loop of plan GNC v3 step M2, **in shadow**: it computes and
-publishes, it writes **no actuator**. `attitude_arm_v1(..., mode=1)` is refused by this
-build.
+`AttitudeV1` is the attitude loop of plan GNC v3. In mode `0` (step M2, **shadow**) it
+computes and publishes and writes **no actuator**. Mode `1` (step M3, **armed**) is accepted
+for the **roll only** (`axes_mask=1`): the loop writes `ctrlState.roll` after the kRPC
+AutoPilot, which stays engaged and keeps pitch and yaw ([below](#armed-roll-m3)). Pitch/yaw
+armed (`axes_mask` bit 2 with `mode=1`) is refused by this build.
 
 **Placement and cadence.** A `TimingManager` callback at stage `Earlyish`, added when the
 first vessel is armed and removed with the last one (or at scene exit). A witness counts its
@@ -817,26 +820,32 @@ a kRPC `ReferenceFrame` and a direction in it (converted to world with
 guidance state it came from, a validity UT, and the AutoPilot's `max_angular_velocity`
 (0 = its default, 1 rad/s). `sequence` must increase. A reference past `ut_valid_until` is
 not used (motif bit 2). An accepted reference renews the real-time lease; an expired lease
-disarms the vessel (the client re-arms).
+disarms the vessel (the client re-arms). `attitude_reference_v2` adds the AutoPilot's
+`max_angular_velocity` per body axis (`omega_max_x` pitch, `omega_max_y` roll,
+`omega_max_z` yaw; 0 = its default) for the per-axis ω guard, and `write_mask`, the write
+permission of that reference (`1` = the roll may be written while it is valid, `0` =
+shadow). The law's own rate limit stays `max(omega_max_x, omega_max_z)`, as the V1 client
+sent, so the computed law is the one of M2. A V1 reference never allows a write.
 
 **Frame** (`attitude_frames_v1`, v3 history layout, 1000-frame ring per vessel): a
-24-double header, a 79-double state block, then one row of 16 doubles per actuator column.
+24-double header, a 100-double state block (schema 2; 79 in schema 1), then one row of 16
+doubles per actuator column.
 
 | Header offset | Meaning |
 |---:|---|
-| 0–1 | protocol (`1`), schema (`1`) |
+| 0–1 | protocol (`1`), schema (`2`; `1` before M3) |
 | 2 | attitude tick (+1 per attitude step; the ring key) |
 | 3–4 | UT, fixed delta time |
 | 5–6 | vessel persistent id, topology generation (of this vessel) |
 | 7 | stage: `1` Earlyish, `2` watcher fallback |
 | 8–9 | Actuators pump physics tick seen, `Time.fixedTime` (to join with v3) |
-| 10–11 | mode (`0` shadow), axes mask |
+| 10–11 | mode (`0` shadow, `1` armed), axes mask |
 | 12 | motif bits (below) |
 | 13–15 | consumed reference sequence, its `ut_stamp`, transport delay UT − `ut_stamp` (s) |
 | 16 | cost of the tick, microseconds (measurement + law + allocation) |
 | 17–18 | allocation iterations, converged |
 | 19 | actuator column count n |
-| 20–22 | state stride (`79`), row count (n), row stride (`16`) |
+| 20–22 | state stride (`100`), row count (n), row stride (`16`) |
 | 23 | capability bits: 0 engine torque, 1 RCS torque, 2 wheel torque, 3 gimbal columns, 4 RCS columns, 5 wheel columns, 6 surface columns, 7 reference, 8 law ran |
 
 State block (body frame: x right = pitch, y nose = roll, z bottom = yaw):
@@ -860,11 +869,23 @@ State block (body frame: x right = pitch, y nose = roll, z bottom = yaw):
 | 63–65 | feed-forward rate, body frame |
 | 66 | ω_max used |
 | 67–68 | saturated fraction, active bounds |
-| 69 | guards: 1 residual > 0.5 α for 1 s, 2 \|ω\| > 1.5 ω_max, 4 > 50 % saturated for 1 s |
+| 69 | guards (M2, vessel-wide): 1 residual > 0.5 α for 1 s, 2 \|ω\| > 1.5 ω_max, 4 > 50 % saturated for 1 s |
 | 70–72, 73–75, 76–78 | RCS, wheel, engine torque (N·m) |
+| 79–81 | schema 2: unrealized share of the authority \|ν_h,a\| / α_a per axis (law) |
+| 82–84 | ω_max per axis used by the per-axis ω guard (rad/s) |
+| 85 | per-axis guards: bit 3a residual, 3a+1 ω, 3a+2 saturation, body axis a (0 x, 1 y, 2 z) |
+| 86 | gimbal-roll coupling ρ = Σ \|B_y,gimbal\|·span / \|B_y\| of the ctrlState roll column (+∞ written as-is when that column is null) |
+| 87 | write state: `0` shadow, `1` armed and writing the roll this step, `2` armed and fallen back |
+| 88 | roll command of this step, `clamp(u0 + (M_d − M)_y / B_yy, −1, 1)` (NaN if not computable), written only when 87 = 1 |
+| 89 | fly-by-wire record: attitude tick of the step it belongs to (the PREVIOUS one; NaN if none) |
+| 90–92 | ctrlState pitch, roll, yaw just before our callback in that step (AutoPilot + pilot + SAS) |
+| 93 | roll written by our callback in that step (NaN if not written) |
+| 94–96 | fly-by-wire chain: our index, kRPC PilotAddon index (−1 absent), length |
+| 97–98 | chain reorders, roll writes (cumulative) |
+| 99 | write permission of the current reference (`write_mask`) |
 
-Quantities of the law are NaN when it did not run; the filtered ones (9–14, 33–35, 51–56)
-exist whenever the tick is consecutive, even without a reference.
+Quantities of the law are NaN when it did not run; the filtered ones (9–14, 33–35, 51–56,
+82–85) exist whenever the tick is consecutive, even without a reference.
 
 Actuator rows: `kind (1 gimbal, 3 ctrlState), flight_id, ordinal, axis, u0, du, u_min,
 u_max, active_set (0 free, -1 lower, 1 upper, 2 fixed), b_pos_xyz, b_neg_xyz, priority`.
@@ -879,13 +900,76 @@ rate ≠ 1), 4 tick gap (filters restarted), 5 unloaded or packed, 6 topology ch
 7 residual guard, 8 ω guard, 9 saturation guard, 10 exception, 11 Earlyish dead (watcher
 fallback), 12 frame conversion failed, 13 RCS model approximate (precision mode or
 `fullThrust`), 14 control-surface columns used (approximate), 15 allocation not converged.
-Bits 7–9 are what WOULD make an armed loop fall back to the AutoPilot.
+Bits 7–9 (M2, vessel-wide) are kept for comparison and no longer decide anything. Schema 2
+(M3): 16 per-axis residual guard, 17 per-axis ω guard, 18 per-axis saturation guard — on
+the axes of the arm mask, in shadow too (what WOULD make an armed loop fall back); in mode
+1 only: 19 roll channel unmodeled (ρ > 0.25 or no roll column), 20 fly-by-wire order not
+verified, 21 our callback moved back to the end of the chain (informational), 22 the
+reference does not allow the write, 23 fallback held after a guard (2 s of game time),
+24 armed but not written this step (summary), 25 the previous step's decision never reached
+the fly-by-wire chain.
 
-`attitude_status_v1()` returns `protocol, schema, count, stride (16), earlyish_registered,
+`attitude_status_v1()` returns `protocol, schema, count, stride (22), earlyish_registered,
 earlyish_calls, fallback_ticks, attitude_tick, ut`, then per vessel `persistent_id, mode,
 axes_mask, lease_remaining_s, loaded, last_motif, sequence, consumed_sequence,
 reference_age_s, latest_tick, history_count, computed_ticks, exceptions, cost_last_us,
-cost_max_us, accepted_references`.
+cost_max_us, accepted_references`, and (schema 2) `write_mask, order_verified, writes,
+fly_by_wire_calls, chain_reorders, fallback_steps`.
+
+#### Armed roll (M3)
+
+**Where the write happens.** One physics step runs, in this order (T-sol-0 probe, 49/50
+steps on the pad): `Precalc > Earlyish > Normal > fly-by-wire > watcher >
+FlightIntegrator > Late > BetterLateThanNever`. The law runs at `Earlyish`; the
+AutoPilot writes `ctrlState` later, inside `FlightInputHandler.FixedUpdate` →
+`Vessel.FeedInputFeed` → `Vessel.OnFlyByWire`, where kRPC's `PilotAddon.Fly` registered
+its callback once per vessel (it ADDS the AutoPilot's output to the pilot state that
+`FlightInputHandler` reset at the start of the step). A write at `Earlyish` would be
+overwritten, so in mode 1 the loop appends its own callback to `Vessel.OnFlyByWire` and
+keeps it LAST: every tick it compares the chain object with the one it verified (a
+reference comparison; `Combine`/`Remove` always make a new object) and, when it changed,
+re-reads the invocation list, moves itself back to the end if needed (motif 21) and
+records its index and kRPC's (state 94–96; kRPC's entry is recognised as a delegate
+whose method belongs to `KRPC.SpaceCenter.PilotAddon`). The write is allowed only if
+kRPC's callback is present and runs before ours (else motif 20). Our callback records the
+`ctrlState` it receives (the AutoPilot's output, state 90–92 of the next frame), then writes
+`ctrlState.roll` with the value decided at this step's `Earlyish`, once; nothing it does can
+throw into the chain.
+
+**What is written.** `u = clamp(u0 + (M_d − M)_y / B_yy, −1, 1)`: the roll allocation
+target on the ctrlState roll channel alone, the only actuator written. `u0` is the served
+roll read at `Earlyish` (the loop's own previous write while it writes). `B_yy` is the
+pure-roll RCS column; flight B measured the realized RCS roll torque at 2–7 % of it,
+because stock `ModuleRCS` projects the lever on the plane of the TOTAL rotation input
+(pitch and yaw commands shrink the roll lever) and ignores |roll| < 0.05. The column is an
+upper bound of the effectiveness: INDI converges monotonically, slowly, without overshoot.
+
+**When it is not written.** Any bit of the blocking set, bits 0–6, 10–20, 22 and 23
+(not 7–9, 21, 24, 25). In particular: a stale reference (the safety of
+M3: the client stops sending, the AutoPilot is back within the reference's validity), no
+write permission in the reference, a per-axis guard on the roll (and 2 s after it clears),
+the watcher-fallback stage, a changed topology, physics warp, and **thrust**: stock
+`ModuleGimbal` mixes `ctrlState.roll` into the engine deflections, an effectiveness the
+ctrlState column does not contain; flight B: ρ = 0 in flip and coast, median 1.2–1.5 and
+up to 7 in boostback and descent, so the armed roll writes in the unpowered phases only.
+When the loop does not write, nothing is restored: the AutoPilot's own roll, computed
+every step, passes through untouched.
+
+**Per-axis guards** (`AttitudeMath`, gains `guard_*`): residual |r_f,a| > 0.5 α_a for 1 s;
+ω |ω_a| > 1.5 ω_max,a for 0.5 s, with the AutoPilot's limit on that axis; saturation
+|ν_h,a| / α_a > 0.9 for 1 s, in the torque space (the M2 guard counted columns at a bound:
+12 of 15 are gimbal columns). Replayed on flight B, they leave no trigger where the
+AutoPilot held its attitude (the M2 guards fired 303 frames in boostback and 118 in
+descent) and none on the roll; the remaining ones are the flip's RCS-versus-aero stall
+(pitch) and the separation tumble (yaw).
+
+**Lease and validity.** The lease (real time, 0.2–10 s) only keeps the vessel armed; the
+reference's validity (game time) decides the writes. The M3 client arms with a 10 s lease,
+above the measured holes of the Python loop (6.6 s at the flip entry, 1.3 s at the
+boostback-to-coast transition), so the loop is not dropped and re-armed there, and sends
+references valid 1 s of game time (the transport delay reached p99 0.46 s and ran past
+0.5 s in 34 short bursts of the flight B coast): the AutoPilot takes the roll back 1 s
+after the client stops.
 
 **Order probe (T-sol-0).** `attitude_order_probe_v1(frames)` stamps, for the next `frames`
 physics steps (1–300), every call of the `Precalc`, `Earlyish`, `Normal`,

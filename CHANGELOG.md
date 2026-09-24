@@ -1,3 +1,34 @@
+# Unreleased — plan GNC v3, chantier 4: AttitudeV1 armed on the roll (M3), born closed
+
+- `attitude_arm_v1(..., mode=1, axes_mask=1)`: the armed mode, ROLL ONLY. The law still
+  runs at `Earlyish`; the roll command is written into `ctrlState.roll` by a callback kept
+  LAST in `Vessel.OnFlyByWire`, after the kRPC AutoPilot's (found by type, verified every
+  time the chain changes, moved back to the end if something registered after it). The
+  AutoPilot stays engaged and keeps pitch and yaw. `mode=1` with pitch/yaw is refused.
+- Written command: `clamp(u0 + (M_d − M)_y / B_yy, −1, 1)`, the roll allocation target on
+  the one channel written (new pure `AttitudeWrite.cs`, mirrored in Python).
+- Immediate fallback — no write, the AutoPilot's own roll passes through — on any blocking
+  motif: stale or absent reference, no write permission in it, per-axis guard on the roll
+  (held 2 s of game time), thrust coupling (stock `ModuleGimbal` mixes `ctrlState.roll`
+  into the deflections: ρ > 0.25), fly-by-wire order not verified, watcher-fallback stage,
+  warp, tick gap, topology change, exception, non-converged allocation, approximate RCS or
+  surface model. Unhooked on release, lease expiry, re-arm and scene exit.
+- Per-axis guards in `AttitudeMath` (residual 0.5 α for 1 s, ω 1.5 ω_max per axis for
+  0.5 s, unrealized |ν_h| / α > 0.9 for 1 s), evaluated on the ARMED axes only; the M2
+  vessel-wide guards stay published (motifs 7–9) and no longer decide anything. The M2 law
+  itself is unchanged: the four M2 golden scenarios are bit-identical (10320 values).
+- `attitude_reference_v2`: the AutoPilot's limit per body axis and the write permission of
+  the reference; V1 references never allow a write.
+- Frames schema 2 (state stride 100): unrealized share, per-axis limits and guards, ρ,
+  write state, roll command, and the previous step's fly-by-wire record (what the
+  AutoPilot had served just before our callback, what we wrote, the chain positions).
+  Status rows of 22 (write permission, order verified, writes, fly-by-wire calls, chain
+  reorders, fallback steps). New motif bits 16–25.
+- `build/tests`: per-axis guards, the write rule on every motif bit, the roll command and
+  coupling, the fly-by-wire chain against a stand-in of kRPC's `PilotAddon`, a fifth golden
+  scenario and an exhaustive `write` section for the Python mirror.
+- Nothing changes for a mode 0 (shadow) client: same law, same V1 reference, no hook.
+
 # Unreleased — plan GNC v3, chantier 1: AttitudeV1 in shadow, QW5, QW6
 
 - New `AttitudeV1` (Actuators plugin), the physics-rate attitude loop of plan GNC v3 step

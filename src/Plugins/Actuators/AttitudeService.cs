@@ -5,8 +5,8 @@ using SCReferenceFrame = KRPC.SpaceCenter.Services.ReferenceFrame;
 namespace KRPC.Bridge.Actuators
 {
     /// <summary>
-    /// AttitudeV1 RPCs: the physics-rate attitude loop, in SHADOW. See AttitudeV1.cs and
-    /// docs/API.md. Nothing here writes an actuator.
+    /// AttitudeV1 RPCs: the physics-rate attitude loop, in shadow (M2) or armed on the roll
+    /// only (M3). See AttitudeV1.cs, AttitudeWrite.cs and docs/API.md.
     /// </summary>
     public static partial class ActuatorsService
     {
@@ -17,11 +17,14 @@ namespace KRPC.Bridge.Actuators
         }
 
         /// <summary>
-        /// Arms the AttitudeV1 shadow loop for the loaded vessel persistentId (decimal
-        /// string), active or not, for leaseSeconds of real time (0.2-10 s). mode 0 = shadow,
-        /// the only mode of this build: the loop computes and publishes, it writes nothing.
-        /// axesMask: bit 1 roll, bit 2 pitch/yaw (recorded only in shadow). At most two
-        /// vessels. Re-arming a vessel returns a new token and invalidates the old one.
+        /// Arms the AttitudeV1 loop for the loaded vessel persistentId (decimal string),
+        /// active or not, for leaseSeconds of real time (0.2-10 s). mode 0 = shadow: the
+        /// loop computes and publishes, it writes nothing. mode 1 = armed, accepted with
+        /// axesMask 1 (roll) only: the loop writes ctrlState.roll after the kRPC AutoPilot
+        /// in the fly-by-wire chain, when a fresh V2 reference allows it and no fallback
+        /// motif is set; pitch/yaw armed is refused. axesMask: bit 1 roll, bit 2 pitch/yaw.
+        /// At most two vessels. Re-arming a vessel returns a new token and invalidates the
+        /// old one.
         /// </summary>
         [KRPCProcedure]
         public static string AttitudeArmV1 (string persistentId, string owner,
@@ -48,6 +51,25 @@ namespace KRPC.Bridge.Actuators
                 omegaFfX, omegaFfY, omegaFfZ, utStamp, utValidUntil, omegaMax);
         }
 
+        /// <summary>
+        /// The V1 reference plus the AutoPilot's max angular velocity per body axis
+        /// (omegaMaxX pitch, omegaMaxY roll, omegaMaxZ yaw, rad/s, 0 = its default), for the
+        /// per-axis omega guard, and writeMask, the write permission of this reference: 1
+        /// lets an armed (mode 1) loop write the roll while the reference is valid, 0 keeps
+        /// it in shadow. The law's rate limit stays max(omegaMaxX, omegaMaxZ), as in V1.
+        /// Returns 1 accepted, 0 ignored (sequence not newer).
+        /// </summary>
+        [KRPCProcedure]
+        public static int AttitudeReferenceV2 (string token, int sequence, SCReferenceFrame frame,
+            double dirX, double dirY, double dirZ, int rollMode, double omegaFfX,
+            double omegaFfY, double omegaFfZ, double utStamp, double utValidUntil,
+            double omegaMaxX, double omegaMaxY, double omegaMaxZ, int writeMask)
+        {
+            return AttitudeV1.ReferenceV2 (token, sequence, frame, dirX, dirY, dirZ, rollMode,
+                omegaFfX, omegaFfY, omegaFfZ, utStamp, utValidUntil, omegaMaxX, omegaMaxY,
+                omegaMaxZ, writeMask);
+        }
+
         /// <summary>Renews the real-time lease of an armed vessel (0.2-10 s).</summary>
         [KRPCProcedure]
         public static bool AttitudeRenewV1 (string token, float leaseSeconds = 1f)
@@ -63,7 +85,7 @@ namespace KRPC.Bridge.Actuators
         }
 
         /// <summary>
-        /// Header: protocol, schema, row count, row stride (16), Earlyish hook registered,
+        /// Header: protocol, schema, row count, row stride (22), Earlyish hook registered,
         /// Earlyish calls, pump-fallback ticks, attitude tick, UT. Then one row per armed
         /// vessel, see docs/API.md. Streamable.
         /// </summary>

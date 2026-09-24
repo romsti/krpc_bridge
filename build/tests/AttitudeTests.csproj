@@ -11,7 +11,11 @@
       * the square-root reference: bounded, monotone, odd;
       * the pseudo-control hedge: grows under saturation, leaks back to zero;
       * the H(z) low-pass: unit DC gain, rejects the Nyquist rate;
-      * the pointing error on known geometry.
+      * the pointing error on known geometry;
+      * M3: the per-axis guards (duration, axis, reset), the write rule of
+        AttitudeWrite.cs (every blocking motif blocks, the others do not), the roll
+        command, the gimbal-roll coupling, and the fly-by-wire chain check against a
+        stand-in of kRPC's PilotAddon (FakeKrpcPilot.cs).
     It then writes golden vectors (JSON) that the Python mirror of the law replays
     (ksp autopilot: tests/test_attitude_c_miroir.py): same inputs, same outputs.
 
@@ -39,7 +43,9 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="ReflectionTests.cs" />
+    <Compile Include="FakeKrpcPilot.cs" />
     <Compile Include="..\..\src\Plugins\Actuators\AttitudeMath.cs" />
+    <Compile Include="..\..\src\Plugins\Actuators\AttitudeWrite.cs" />
     <Compile Include="..\..\src\Plugins\Actuators\ReflectionCache.cs" />
   </ItemGroup>
 

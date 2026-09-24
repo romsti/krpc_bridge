@@ -8,7 +8,7 @@ using SCReferenceFrame = KRPC.SpaceCenter.Services.ReferenceFrame;
 namespace KRPC.Bridge.Actuators
 {
     /// <summary>
-    /// AttitudeV1: the attitude loop at the physics rate, IN SHADOW (plan GNC v3, step M2).
+    /// AttitudeV1: the attitude loop at the physics rate (plan GNC v3, steps M2 and M3).
     ///
     /// Every FixedUpdate (TimingManager stage Earlyish), for each vessel a client armed by
     /// persistentId, active or not: measures the rotational state and the REALIZED torques,
@@ -17,22 +17,28 @@ namespace KRPC.Bridge.Actuators
     /// torque-form INDI, bounded WLS allocation) and publishes the wanted torque M_d, the
     /// allocation and the residuals in a 1000-frame ring.
     ///
-    /// It WRITES NO ACTUATOR. Mode 1 (armed) is refused by this build: the allocation is
-    /// published, never applied. Born closed: nothing runs until AttitudeArmV1, and a
-    /// vessel whose real-time lease runs out is disarmed.
+    /// Mode 0 (shadow) writes no actuator. Mode 1 (armed, M3) is accepted for the ROLL only:
+    /// the command decided at Earlyish (AttitudeWrite.RollCommand) is written into
+    /// ctrlState.roll by a callback kept LAST in Vessel.OnFlyByWire, after the kRPC
+    /// AutoPilot's; the AutoPilot stays engaged and keeps pitch and yaw. Any motif of
+    /// AttitudeWrite.BlockingMotifs (stale reference, guard of the armed axis, thrust
+    /// coupling, chain order, ...) means no write in that step: the AutoPilot's own roll,
+    /// computed every step anyway, goes through unchanged. Born closed: nothing runs until
+    /// AttitudeArmV1, and a vessel whose real-time lease runs out is disarmed and unhooked.
     /// </summary>
     internal static class AttitudeV1
     {
         internal const int ProtocolVersion = 1;
-        internal const int SchemaVersion = 1;
+        internal const int SchemaVersion = 2;
         internal const int MaxVessels = 2;
         internal const int HistoryCapacity = 1000;
-        internal const int ModeShadow = 0;
+        internal const int ModeShadow = AttitudeWrite.ModeShadow;
+        internal const int ModeArmed = AttitudeWrite.ModeArmed;
         internal const int HeaderStride = 24;
-        internal const int StateStride = 79;
+        internal const int StateStride = 100;
         internal const int RowStride = 16;
         internal const int StatusHeaderStride = 9;
-        internal const int StatusRowStride = 16;
+        internal const int StatusRowStride = 22;
         const float MinLeaseSeconds = 0.2f;
         const float MaxLeaseSeconds = 10f;
         const int PumpFallbackAfter = 3;
@@ -42,26 +48,34 @@ namespace KRPC.Bridge.Actuators
         internal const int KindCtrlState = 3;
 
         // Stage codes (header offset 7).
-        internal const int StageEarlyish = 1;
-        internal const int StagePumpFallback = 2;
+        internal const int StageEarlyish = AttitudeWrite.StageEarlyish;
+        internal const int StagePumpFallback = AttitudeWrite.StagePumpFallback;
 
-        // Motif bits: why the law did not run, or what WOULD make an armed loop fall back.
-        internal const long MotifLeaseExpired = 1L << 0;
-        internal const long MotifNoReference = 1L << 1;
-        internal const long MotifReferenceStale = 1L << 2;
-        internal const long MotifWarp = 1L << 3;
-        internal const long MotifTickGap = 1L << 4;
-        internal const long MotifUnloaded = 1L << 5;
-        internal const long MotifTopologyChanged = 1L << 6;
-        internal const long MotifResidualGuard = 1L << 7;
-        internal const long MotifOmegaGuard = 1L << 8;
-        internal const long MotifSaturationGuard = 1L << 9;
-        internal const long MotifException = 1L << 10;
-        internal const long MotifEarlyishDead = 1L << 11;
-        internal const long MotifFrameConversion = 1L << 12;
-        internal const long MotifRcsModelApprox = 1L << 13;
-        internal const long MotifSurfaceApprox = 1L << 14;
-        internal const long MotifNotConverged = 1L << 15;
+        // Motif bits: why the law did not run or did not write, or what WOULD make an armed
+        // loop fall back. Defined in the pure AttitudeWrite (tested, mirrored in Python).
+        internal const long MotifLeaseExpired = AttitudeWrite.MotifLeaseExpired;
+        internal const long MotifNoReference = AttitudeWrite.MotifNoReference;
+        internal const long MotifReferenceStale = AttitudeWrite.MotifReferenceStale;
+        internal const long MotifWarp = AttitudeWrite.MotifWarp;
+        internal const long MotifTickGap = AttitudeWrite.MotifTickGap;
+        internal const long MotifUnloaded = AttitudeWrite.MotifUnloaded;
+        internal const long MotifTopologyChanged = AttitudeWrite.MotifTopologyChanged;
+        internal const long MotifResidualGuard = AttitudeWrite.MotifResidualGuard;
+        internal const long MotifOmegaGuard = AttitudeWrite.MotifOmegaGuard;
+        internal const long MotifSaturationGuard = AttitudeWrite.MotifSaturationGuard;
+        internal const long MotifException = AttitudeWrite.MotifException;
+        internal const long MotifEarlyishDead = AttitudeWrite.MotifEarlyishDead;
+        internal const long MotifFrameConversion = AttitudeWrite.MotifFrameConversion;
+        internal const long MotifRcsModelApprox = AttitudeWrite.MotifRcsModelApprox;
+        internal const long MotifSurfaceApprox = AttitudeWrite.MotifSurfaceApprox;
+        internal const long MotifNotConverged = AttitudeWrite.MotifNotConverged;
+        internal const long MotifRollChannelUnmodeled = AttitudeWrite.MotifRollChannelUnmodeled;
+        internal const long MotifFlyByWireOrder = AttitudeWrite.MotifFlyByWireOrder;
+        internal const long MotifFlyByWireReordered = AttitudeWrite.MotifFlyByWireReordered;
+        internal const long MotifClientWriteOff = AttitudeWrite.MotifClientWriteOff;
+        internal const long MotifGuardHold = AttitudeWrite.MotifGuardHold;
+        internal const long MotifWriteFallback = AttitudeWrite.MotifWriteFallback;
+        internal const long MotifFlyByWireMissed = AttitudeWrite.MotifFlyByWireMissed;
 
         // Capability bits (header offset 23).
         const long CapEngineTorque = 1L << 0;
@@ -141,6 +155,32 @@ namespace KRPC.Bridge.Actuators
             internal double CostMicrosLast;
             internal double CostMicrosMax;
             internal bool Loaded;
+
+            // M3: per-axis AutoPilot limit and write permission of the last reference.
+            internal double OmegaMaxX, OmegaMaxY, OmegaMaxZ;
+            internal int WriteMask;
+            internal bool Dropped;
+            // M3: fly-by-wire hook (mode 1 only).
+            internal FlightInputCallback FlyByWire;
+            internal Vessel HookedVessel;
+            internal Delegate ChainSeen;
+            internal int ChainOwnIndex = -1;
+            internal int ChainKrpcIndex = -1;
+            internal int ChainLength;
+            internal long ChainReorders;
+            // M3: the decision of this step (Earlyish), consumed by the fly-by-wire callback.
+            internal bool WriteRoll;
+            internal double WriteRollValue = double.NaN;
+            internal long WriteTick = -1;
+            internal double GuardHoldUntil = double.NegativeInfinity;
+            // M3: what the fly-by-wire callback saw and wrote, published in the next frame.
+            internal long FbwTick = -1;
+            internal double FbwApPitch = double.NaN, FbwApRoll = double.NaN, FbwApYaw = double.NaN;
+            internal double FbwWrittenRoll = double.NaN;
+            internal long FbwCalls;
+            internal long FbwExceptions;
+            internal long Writes;
+            internal long FallbackSteps;
         }
 
         static readonly Dictionary<uint, Entry> entries = new Dictionary<uint, Entry> ();
@@ -163,11 +203,14 @@ namespace KRPC.Bridge.Actuators
             if (owner.Length > 80)
                 throw new ArgumentOutOfRangeException (nameof (owner));
             ValidateLease (leaseSeconds);
-            if (mode != ModeShadow)
-                throw new InvalidOperationException (
-                    "AttitudeV1 : seul le mode ombre (0) existe dans cette DLL ; aucun actionneur n'est ecrit");
+            if (mode != ModeShadow && mode != ModeArmed)
+                throw new ArgumentOutOfRangeException (nameof (mode), "0 ombre, 1 arme (roulis seul)");
             if (axesMask < 0 || axesMask > 3)
                 throw new ArgumentOutOfRangeException (nameof (axesMask), "bits : 1 roulis, 2 tangage/lacet");
+            if (mode == ModeArmed && axesMask != AttitudeWrite.ArmRoll)
+                throw new InvalidOperationException (
+                    "AttitudeV1 : le mode arme (1) n'accepte que le roulis seul (axes_mask 1) " +
+                    "dans cette DLL ; tangage/lacet refuses");
             Entry entry;
             if (!entries.TryGetValue (pid, out entry)) {
                 if (entries.Count >= MaxVessels)
@@ -176,6 +219,9 @@ namespace KRPC.Bridge.Actuators
                 entry = new Entry { PersistentId = pid };
                 entries.Add (pid, entry);
             }
+            // Re-arming: the previous hook goes, the next tick installs one if mode 1.
+            Unhook (entry);
+            entry.Dropped = false;
             entry.Owner = owner.Trim ();
             entry.Token = Guid.NewGuid ().ToString ("N");
             entry.Mode = mode;
@@ -185,6 +231,12 @@ namespace KRPC.Bridge.Actuators
             entry.HaveReference = false;
             entry.Sequence = 0;
             entry.Frame = null;
+            entry.WriteMask = 0;
+            entry.OmegaMaxX = 0.0;
+            entry.OmegaMaxY = 0.0;
+            entry.OmegaMaxZ = 0.0;
+            entry.GuardHoldUntil = double.NegativeInfinity;
+            ClearFlyByWireRecord (entry);
             entry.Law.Reset ();
             entry.HavePrevious = false;
             Register ();
@@ -217,6 +269,44 @@ namespace KRPC.Bridge.Actuators
             double omegaFfX, double omegaFfY, double omegaFfZ,
             double utStamp, double utValidUntil, double omegaMax)
         {
+            // V1: one scalar limit (the client's max of pitch and yaw) for every axis, and
+            // no write permission: a V1 client never makes an armed loop write.
+            return Accept (token, sequence, frame, dirX, dirY, dirZ, rollMode, omegaFfX,
+                omegaFfY, omegaFfZ, utStamp, utValidUntil, omegaMax, omegaMax, omegaMax,
+                omegaMax, 0);
+        }
+
+        /// <summary>
+        /// V2 (M3): the AutoPilot's limit per body axis (pitch x, roll y, yaw z; 0 = its
+        /// default), for the per-axis omega guard, and the write permission of this
+        /// reference (bit 1 roll): the client grants it only while the AutoPilot damps the
+        /// roll rate (target_roll NaN). The law's own reference keeps the scalar
+        /// max(|x|, |z|) of V1, so the computed law is the one of M2.
+        /// </summary>
+        internal static int ReferenceV2 (string token, int sequence, SCReferenceFrame frame,
+            double dirX, double dirY, double dirZ, int rollMode,
+            double omegaFfX, double omegaFfY, double omegaFfZ,
+            double utStamp, double utValidUntil, double omegaMaxX, double omegaMaxY,
+            double omegaMaxZ, int writeMask)
+        {
+            if (!Finite (omegaMaxX) || !Finite (omegaMaxY) || !Finite (omegaMaxZ) ||
+                    omegaMaxX < 0.0 || omegaMaxY < 0.0 || omegaMaxZ < 0.0)
+                throw new ArgumentOutOfRangeException ("omegaMax", "limites par axe finies et >= 0 attendues");
+            if (writeMask != 0 && writeMask != AttitudeWrite.ArmRoll)
+                throw new ArgumentOutOfRangeException (nameof (writeMask),
+                    "0 ou 1 (roulis) : tangage/lacet ne s'ecrivent pas dans cette DLL");
+            double scalar = Math.Max (omegaMaxX, omegaMaxZ);
+            return Accept (token, sequence, frame, dirX, dirY, dirZ, rollMode, omegaFfX,
+                omegaFfY, omegaFfZ, utStamp, utValidUntil, scalar, omegaMaxX, omegaMaxY,
+                omegaMaxZ, writeMask);
+        }
+
+        static int Accept (string token, int sequence, SCReferenceFrame frame,
+            double dirX, double dirY, double dirZ, int rollMode,
+            double omegaFfX, double omegaFfY, double omegaFfZ,
+            double utStamp, double utValidUntil, double omegaMax, double omegaMaxX,
+            double omegaMaxY, double omegaMaxZ, int writeMask)
+        {
             var entry = RequireToken (token);
             if (frame == null)
                 throw new ArgumentNullException (nameof (frame));
@@ -244,6 +334,10 @@ namespace KRPC.Bridge.Actuators
             entry.UtStamp = utStamp;
             entry.UtValidUntil = utValidUntil;
             entry.OmegaMax = omegaMax;
+            entry.OmegaMaxX = omegaMaxX;
+            entry.OmegaMaxY = omegaMaxY;
+            entry.OmegaMaxZ = omegaMaxZ;
+            entry.WriteMask = writeMask;
             entry.HaveReference = true;
             entry.AcceptedCount++;
             entry.ExpiresAt = Time.realtimeSinceStartup + entry.LeaseSeconds;
@@ -283,6 +377,15 @@ namespace KRPC.Bridge.Actuators
                 output.Add (e.CostMicrosLast);
                 output.Add (e.CostMicrosMax);
                 output.Add (e.AcceptedCount);
+                // Schema 2 (M3).
+                output.Add (e.WriteMask);
+                output.Add (e.Mode == ModeArmed &&
+                    AttitudeWrite.OrderVerified (e.ChainOwnIndex, e.ChainKrpcIndex, e.ChainLength)
+                    ? 1.0 : 0.0);
+                output.Add (e.Writes);
+                output.Add (e.FbwCalls);
+                output.Add (e.ChainReorders);
+                output.Add (e.FallbackSteps);
             }
             return output;
         }
@@ -301,6 +404,10 @@ namespace KRPC.Bridge.Actuators
         /// <summary>Leaving the flight scene: every armed vessel is gone.</summary>
         internal static void ResetForScene ()
         {
+            foreach (var pair in entries) {
+                pair.Value.Dropped = true;
+                Unhook (pair.Value);
+            }
             entries.Clear ();
             Unregister ();
             AttitudeProbe.Stop ();
@@ -356,6 +463,11 @@ namespace KRPC.Bridge.Actuators
 
         static void Drop (uint persistentId)
         {
+            Entry entry;
+            if (entries.TryGetValue (persistentId, out entry)) {
+                entry.Dropped = true;
+                Unhook (entry);
+            }
             entries.Remove (persistentId);
             if (entries.Count == 0)
                 Unregister ();
@@ -402,13 +514,20 @@ namespace KRPC.Bridge.Actuators
             long t0 = Stopwatch.GetTimestamp ();
             long motif = stage == StagePumpFallback ? MotifEarlyishDead : 0L;
             long caps = 0;
+            // M3: a decision of the previous step that the fly-by-wire callback never
+            // consumed (hook lost, vessel not fed): dropped, and said.
+            if (e.WriteRoll) {
+                e.WriteRoll = false;
+                motif |= MotifFlyByWireMissed;
+            }
             try {
                 var vessel = Resolve (e);
                 if (vessel == null) {
                     e.Loaded = false;
                     e.HavePrevious = false;
                     e.Law.Reset ();
-                    e.LastMotif = motif | MotifUnloaded;
+                    e.LastMotif = motif | MotifUnloaded |
+                        (e.Mode == ModeArmed ? MotifWriteFallback : 0L);
                     return;
                 }
                 e.Loaded = true;
@@ -416,7 +535,8 @@ namespace KRPC.Bridge.Actuators
                 if (reference == null) {
                     e.HavePrevious = false;
                     e.Law.Reset ();
-                    e.LastMotif = motif | MotifUnloaded;
+                    e.LastMotif = motif | MotifUnloaded |
+                        (e.Mode == ModeArmed ? MotifWriteFallback : 0L);
                     return;
                 }
 
@@ -618,6 +738,9 @@ namespace KRPC.Bridge.Actuators
                 inp.OmegaDotFf [1] = 0.0;
                 inp.OmegaDotFf [2] = 0.0;
                 inp.OmegaMax = e.HaveReference ? e.OmegaMax : 0.0;
+                inp.OmegaMaxAxis [0] = e.HaveReference ? e.OmegaMaxX : 0.0;
+                inp.OmegaMaxAxis [1] = e.HaveReference ? e.OmegaMaxY : 0.0;
+                inp.OmegaMaxAxis [2] = e.HaveReference ? e.OmegaMaxZ : 0.0;
                 if (warp) {
                     // Physics warp: a real loop would fall back; the shadow restarts.
                     inp.OmegaDotValid = false;
@@ -641,22 +764,166 @@ namespace KRPC.Bridge.Actuators
                 if (o.SaturationGuard)
                     motif |= MotifSaturationGuard;
 
+                // ---------------------------------------------------- M3: write or not
+                // Per-axis guards on the axes of the arm mask; in shadow, what WOULD fall back.
+                long armedGuards = AttitudeWrite.ArmedAxisGuardMotifs (o.AxisGuardMask, e.AxesMask);
+                motif |= armedGuards;
+                double rho = AttitudeWrite.RollCoupling (inp.B, inp.UMin, inp.UMax, n,
+                    nGimbalColumns);
+                int jRoll = nGimbalColumns + 1;
+                double rollCommand = double.NaN;
+                bool commandOk = o.Computed && AttitudeWrite.RollCommand (inp.U0 [jRoll],
+                    o.TorqueAllocTarget [1], inp.B [1 * n + jRoll], out rollCommand);
+                int writeState = AttitudeWrite.WriteShadow;
+                if (e.Mode == ModeArmed) {
+                    motif |= EnsureHook (e, vessel);
+                    if (!AttitudeWrite.OrderVerified (e.ChainOwnIndex, e.ChainKrpcIndex, e.ChainLength))
+                        motif |= MotifFlyByWireOrder;
+                    if (armedGuards != 0)
+                        e.GuardHoldUntil = ut + AttitudeWrite.GuardHoldSeconds;
+                    else if (ut < e.GuardHoldUntil)
+                        motif |= MotifGuardHold;
+                    if (!(rho <= AttitudeWrite.RollCouplingMax) || (o.Computed && !commandOk))
+                        motif |= MotifRollChannelUnmodeled;
+                    if ((e.WriteMask & AttitudeWrite.ArmRoll) == 0)
+                        motif |= MotifClientWriteOff;
+                    if (commandOk && AttitudeWrite.MayWrite (e.Mode, e.AxesMask, stage,
+                            o.Computed, motif)) {
+                        e.WriteRoll = true;
+                        e.WriteRollValue = rollCommand;
+                        e.WriteTick = ownTick;
+                        writeState = AttitudeWrite.WriteWriting;
+                    } else {
+                        motif |= MotifWriteFallback;
+                        e.FallbackSteps++;
+                        writeState = AttitudeWrite.WriteFallback;
+                    }
+                }
+
                 // ------------------------------------------------------------- frame
                 long end = Stopwatch.GetTimestamp ();
                 e.CostMicrosLast = (end - t0) * 1e6 / Stopwatch.Frequency;
                 if (e.CostMicrosLast > e.CostMicrosMax)
                     e.CostMicrosMax = e.CostMicrosLast;
                 WriteFrame (e, vessel, stage, ut, dt, motif, caps, served, engineBody, rcsBody,
-                    wheelBody);
+                    wheelBody, rho, writeState, rollCommand);
                 e.LastMotif = motif;
             } catch (Exception exc) {
+                e.WriteRoll = false;
                 e.Exceptions++;
                 e.Law.Reset ();
                 e.HavePrevious = false;
-                e.LastMotif = motif | MotifException;
+                e.LastMotif = motif | MotifException |
+                    (e.Mode == ModeArmed ? MotifWriteFallback : 0L);
                 if (e.Exceptions <= 5)
                     BridgeLog.Error ("AttitudeV1 tick: " + exc);
             }
+        }
+
+        // ----------------------------------------------------- M3: fly-by-wire hook
+
+        /// <summary>
+        /// Keeps our callback LAST in vessel.OnFlyByWire (after the kRPC AutoPilot's, which
+        /// PilotAddon.Fly registers once per vessel), and records the chain positions. The
+        /// chain is re-read only when the delegate object changes (Combine/Remove make a
+        /// new one), so a steady chain costs one reference comparison per tick.
+        /// </summary>
+        static long EnsureHook (Entry e, Vessel vessel)
+        {
+            long motif = 0;
+            if (e.FlyByWire == null) {
+                var entry = e;
+                e.FlyByWire = new FlightInputCallback (s => OnFlyByWire (entry, s));
+            }
+            if (!ReferenceEquals (e.HookedVessel, vessel)) {
+                Unhook (e);
+                vessel.OnFlyByWire = (FlightInputCallback)Delegate.Combine (vessel.OnFlyByWire,
+                    e.FlyByWire);
+                e.HookedVessel = vessel;
+                e.ChainSeen = null;
+            }
+            Delegate chain = vessel.OnFlyByWire;
+            if (!ReferenceEquals (chain, e.ChainSeen)) {
+                int own, krpc, length;
+                AttitudeWrite.ClassifyChain (chain, e.FlyByWire, out own, out krpc, out length);
+                if (own < 0 || own != length - 1) {
+                    // Someone registered after us (or removed us): back to the end.
+                    vessel.OnFlyByWire = (FlightInputCallback)Delegate.Remove (vessel.OnFlyByWire,
+                        e.FlyByWire);
+                    vessel.OnFlyByWire = (FlightInputCallback)Delegate.Combine (vessel.OnFlyByWire,
+                        e.FlyByWire);
+                    e.ChainReorders++;
+                    motif |= MotifFlyByWireReordered;
+                    chain = vessel.OnFlyByWire;
+                    AttitudeWrite.ClassifyChain (chain, e.FlyByWire, out own, out krpc, out length);
+                }
+                e.ChainSeen = chain;
+                e.ChainOwnIndex = own;
+                e.ChainKrpcIndex = krpc;
+                e.ChainLength = length;
+            }
+            return motif;
+        }
+
+        static void Unhook (Entry e)
+        {
+            var hooked = e.HookedVessel;
+            if (hooked != null && e.FlyByWire != null) {
+                try {
+                    hooked.OnFlyByWire = (FlightInputCallback)Delegate.Remove (hooked.OnFlyByWire,
+                        e.FlyByWire);
+                } catch (Exception exc) {
+                    BridgeLog.Error ("AttitudeV1: retrait du fly-by-wire: " + exc.Message);
+                }
+            }
+            e.HookedVessel = null;
+            e.ChainSeen = null;
+            e.ChainOwnIndex = -1;
+            e.ChainKrpcIndex = -1;
+            e.ChainLength = 0;
+            e.WriteRoll = false;
+        }
+
+        /// <summary>
+        /// Our link of the vessel's fly-by-wire chain, after the kRPC AutoPilot's: records
+        /// the ctrlState it served (published in the next frame), then writes the roll
+        /// decided at this step's Earlyish, once. Nothing may escape: an exception would
+        /// stop the chain and FeedInputFeed before propagateControlUpdate.
+        /// </summary>
+        static void OnFlyByWire (Entry e, FlightCtrlState state)
+        {
+            try {
+                if (state == null)
+                    return;
+                e.FbwCalls++;
+                e.FbwTick = ownTick;
+                e.FbwApPitch = state.pitch;
+                e.FbwApRoll = state.roll;
+                e.FbwApYaw = state.yaw;
+                e.FbwWrittenRoll = double.NaN;
+                if (e.WriteRoll && e.WriteTick == ownTick && e.Mode == ModeArmed && !e.Dropped &&
+                        !double.IsNaN (e.WriteRollValue)) {
+                    float value = (float)e.WriteRollValue;
+                    state.roll = value;
+                    e.FbwWrittenRoll = value;
+                    e.Writes++;
+                }
+                e.WriteRoll = false;
+            } catch (Exception exc) {
+                e.WriteRoll = false;
+                e.FbwExceptions++;
+                if (e.FbwExceptions <= 5)
+                    BridgeLog.Error ("AttitudeV1 fly-by-wire: " + exc);
+            }
+        }
+
+        static void ClearFlyByWireRecord (Entry e)
+        {
+            e.FbwTick = -1;
+            e.FbwApPitch = double.NaN;
+            e.FbwApRoll = double.NaN;
+            e.FbwApYaw = double.NaN;
+            e.FbwWrittenRoll = double.NaN;
         }
 
         static void SetColumn (AttitudeInput inp, int j, Vector3 column)
@@ -669,7 +936,7 @@ namespace KRPC.Bridge.Actuators
 
         static void WriteFrame (Entry e, Vessel vessel, int stage, double ut, double dt,
             long motif, long caps, double[] served, Vector3 engineBody, Vector3 rcsBody,
-            double[] wheelBody)
+            double[] wheelBody, double rollCoupling, int writeState, double rollCommand)
         {
             var inp = e.Input;
             var o = e.Output;
@@ -741,6 +1008,27 @@ namespace KRPC.Bridge.Actuators
             frame [s + 76] = engineBody.x;
             frame [s + 77] = engineBody.y;
             frame [s + 78] = engineBody.z;
+            // Schema 2 (M3).
+            Put3 (frame, s + 79, o.Unrealized, o.Computed);
+            Put3 (frame, s + 82, o.OmegaMaxAxis, o.Filtered);
+            frame [s + 85] = o.Filtered ? o.AxisGuardMask : double.NaN;
+            frame [s + 86] = rollCoupling;
+            frame [s + 87] = writeState;
+            frame [s + 88] = rollCommand;
+            // What the fly-by-wire callback saw and wrote in the PREVIOUS physics step
+            // (it runs after Earlyish); frame [s + 89] is that step's attitude tick.
+            frame [s + 89] = e.FbwTick >= 0 ? e.FbwTick : double.NaN;
+            frame [s + 90] = e.FbwApPitch;
+            frame [s + 91] = e.FbwApRoll;
+            frame [s + 92] = e.FbwApYaw;
+            frame [s + 93] = e.FbwWrittenRoll;
+            ClearFlyByWireRecord (e);
+            frame [s + 94] = e.ChainOwnIndex;
+            frame [s + 95] = e.ChainKrpcIndex;
+            frame [s + 96] = e.ChainLength;
+            frame [s + 97] = e.ChainReorders;
+            frame [s + 98] = e.Writes;
+            frame [s + 99] = e.WriteMask;
 
             int r = HeaderStride + StateStride;
             for (int j = 0; j < n; j++) {

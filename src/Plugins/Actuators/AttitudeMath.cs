@@ -27,6 +27,10 @@ namespace KRPC.Bridge.Actuators
     //           e_j = |W_v B_j| span_j the acceleration of actuator j at full span: the
     //           regularization costs gamma * (own effect)^2, whatever the vessel size
     //   nu_h  = I^-1 (M_d - M - B du)       unrealizable part; w_pch integrates it (PCH)
+    //   guards per axis a (M3): |r_f,a| > 0.5 alpha_a for 1 s ; |w_a| > 1.5 w_max,a (the
+    //           AutoPilot's limit on that axis) for 0.5 s ; |nu_h,a| / alpha_a > 0.9 for
+    //           1 s. The vessel-wide guards of M2 stay published for comparison; an armed
+    //           loop falls back on these, on its armed axes only (AttitudeWrite.cs).
     //
     // The allocation target is M_d - M (M = realized torque, unfiltered), which is the
     // torque-form INDI command M_f + I (nu - w_dot_f) expressed as an increment from the
@@ -52,6 +56,15 @@ namespace KRPC.Bridge.Actuators
         internal double OmegaMaxDefault = 1.0;    // rad/s, kRPC AutoPilot default
         internal double TauResidual = 0.2;        // s, residual guard filter
         internal int MaxIterations = 20;
+        // Per-axis guards (M3): an armed loop falls back on these, on its armed axes only.
+        // Replayed on flight B (98f569b1_20260923_224614): no trigger where the AutoPilot
+        // held its attitude; left only in the flip, the RCS-vs-aero stall and the tumble.
+        internal double GuardResidualRatio = 0.5;     // |r_f,a| > ratio * alpha_a ...
+        internal double GuardResidualSeconds = 1.0;   // ... for longer than this
+        internal double GuardOmegaRatio = 1.5;        // |w_a| > ratio * w_max,a (AP's limit) ...
+        internal double GuardOmegaSeconds = 0.5;
+        internal double GuardSaturationRatio = 0.9;   // |nu_h,a| / alpha_a > ratio ...
+        internal double GuardSaturationSeconds = 1.0;
     }
 
     /// <summary>Direct-form-I biquad, three independent axes, same coefficients.</summary>
@@ -127,6 +140,10 @@ namespace KRPC.Bridge.Actuators
         internal int[] ActiveSet = new int[0];
         internal double ResidualHighSeconds;
         internal double SaturationHighSeconds;
+        // Per-axis guard timers (M3), seconds the condition has held.
+        internal readonly double[] AxisResidualHigh = new double[3];
+        internal readonly double[] AxisOmegaHigh = new double[3];
+        internal readonly double[] AxisSaturationHigh = new double[3];
 
         internal void Reset ()
         {
@@ -143,6 +160,16 @@ namespace KRPC.Bridge.Actuators
             ActiveSet = new int[0];
             ResidualHighSeconds = 0.0;
             SaturationHighSeconds = 0.0;
+            ResetAxisGuards ();
+        }
+
+        internal void ResetAxisGuards ()
+        {
+            for (int a = 0; a < 3; a++) {
+                AxisResidualHigh [a] = 0.0;
+                AxisOmegaHigh [a] = 0.0;
+                AxisSaturationHigh [a] = 0.0;
+            }
         }
     }
 
@@ -160,6 +187,7 @@ namespace KRPC.Bridge.Actuators
         internal readonly double[] OmegaFf = new double[3];
         internal readonly double[] OmegaDotFf = new double[3];
         internal double OmegaMax;                 // <= 0: gains default
+        internal readonly double[] OmegaMaxAxis = new double[3];  // AP limit per axis, <= 0: OmegaMax
         internal int N;
         internal double[] B = new double[0];      // column j of axis a at [a * N + j]
         internal double[] U0 = new double[0];
@@ -212,6 +240,15 @@ namespace KRPC.Bridge.Actuators
         internal bool ResidualGuard;              // |r_f| > 0.5 alpha for more than 1 s
         internal bool SaturationGuard;            // > 50 % saturated for more than 1 s
         internal bool OmegaGuard;                 // |w| > 1.5 w_max
+        // Per-axis guards (M3). Unrealized = |nu_h| / alpha, the unrealizable share of the
+        // authority (NaN when the law did not run). AxisGuardMask: bit 3a residual, 3a+1
+        // omega, 3a+2 saturation, for body axis a (0 x pitch, 1 y roll, 2 z yaw).
+        internal readonly double[] Unrealized = new double[3];
+        internal readonly double[] OmegaMaxAxis = new double[3];
+        internal readonly bool[] AxisResidualGuard = new bool[3];
+        internal readonly bool[] AxisOmegaGuard = new bool[3];
+        internal readonly bool[] AxisSaturationGuard = new bool[3];
+        internal int AxisGuardMask;
 
         internal void Resize (int n)
         {
@@ -330,6 +367,16 @@ namespace KRPC.Bridge.Actuators
             o.Resize (n);
             o.Computed = false;
             o.Filtered = false;
+            // Per-axis guards: an early return publishes none (the old vessel-wide ones
+            // keep their M2 behaviour, stale values included, for comparison).
+            for (int a = 0; a < 3; a++) {
+                o.Unrealized [a] = double.NaN;
+                o.OmegaMaxAxis [a] = double.NaN;
+                o.AxisResidualGuard [a] = false;
+                o.AxisOmegaGuard [a] = false;
+                o.AxisSaturationGuard [a] = false;
+            }
+            o.AxisGuardMask = 0;
             double dt = inp.Dt;
             if (!(dt > 0.0) || !Finite3 (inp.Omega) || !Finite3 (inp.Torque) ||
                     !Finite3 (inp.Inertia) || !(inp.Inertia [0] > 0.0) ||
@@ -350,6 +397,7 @@ namespace KRPC.Bridge.Actuators
                 st.FilterTorque.Reset ();
                 st.HavePrevious = false;
                 st.HaveResidualF = false;
+                st.ResetAxisGuards ();
                 return;
             }
             st.FilterOmegaDot.Step (inp.OmegaDotMeasured, o.OmegaDotF);
@@ -408,6 +456,18 @@ namespace KRPC.Bridge.Actuators
             st.ResidualHighSeconds = residualHigh ? st.ResidualHighSeconds + dt : 0.0;
             o.ResidualGuard = st.ResidualHighSeconds > 1.0;
 
+            // Per-axis guards that do not need a reference (M3).
+            for (int a = 0; a < 3; a++) {
+                double wMaxAxis = inp.OmegaMaxAxis [a] > 0.0 ? inp.OmegaMaxAxis [a] : omegaMax;
+                o.OmegaMaxAxis [a] = wMaxAxis;
+                st.AxisResidualHigh [a] = Math.Abs (o.ResidualF [a]) > g.GuardResidualRatio * o.Alpha [a]
+                    ? st.AxisResidualHigh [a] + dt : 0.0;
+                o.AxisResidualGuard [a] = st.AxisResidualHigh [a] > g.GuardResidualSeconds;
+                st.AxisOmegaHigh [a] = Math.Abs (inp.Omega [a]) > g.GuardOmegaRatio * wMaxAxis
+                    ? st.AxisOmegaHigh [a] + dt : 0.0;
+                o.AxisOmegaGuard [a] = st.AxisOmegaHigh [a] > g.GuardOmegaSeconds;
+            }
+
             if (!inp.ReferenceValid || !Finite3 (inp.Error) || !Finite3 (inp.OmegaFf) ||
                     !Finite3 (inp.OmegaDotFf)) {
                 // No reference: filters stay warm, the hedge and the allocation do not run.
@@ -415,6 +475,9 @@ namespace KRPC.Bridge.Actuators
                     st.OmegaPch [a] = 0.0;
                 st.SaturationHighSeconds = 0.0;
                 o.SaturationGuard = false;
+                for (int a = 0; a < 3; a++)
+                    st.AxisSaturationHigh [a] = 0.0;
+                o.AxisGuardMask = AxisGuardMask (o);
                 return;
             }
 
@@ -514,7 +577,32 @@ namespace KRPC.Bridge.Actuators
                 st.OmegaPch [a] = pch;
                 o.OmegaPch [a] = pch;
             }
+
+            // Per-axis saturation guard (M3), in the torque space: the unrealizable share of
+            // the authority, whatever the number of columns at a bound.
+            for (int a = 0; a < 3; a++) {
+                o.Unrealized [a] = Math.Abs (o.NuHedge [a]) / o.Alpha [a];
+                st.AxisSaturationHigh [a] = o.Unrealized [a] > g.GuardSaturationRatio
+                    ? st.AxisSaturationHigh [a] + dt : 0.0;
+                o.AxisSaturationGuard [a] = st.AxisSaturationHigh [a] > g.GuardSaturationSeconds;
+            }
+            o.AxisGuardMask = AxisGuardMask (o);
             o.Computed = true;
+        }
+
+        /// <summary>Bit 3a residual, 3a+1 omega, 3a+2 saturation, body axis a.</summary>
+        internal static int AxisGuardMask (AttitudeOutput o)
+        {
+            int mask = 0;
+            for (int a = 0; a < 3; a++) {
+                if (o.AxisResidualGuard [a])
+                    mask |= 1 << (3 * a);
+                if (o.AxisOmegaGuard [a])
+                    mask |= 1 << (3 * a + 1);
+                if (o.AxisSaturationGuard [a])
+                    mask |= 1 << (3 * a + 2);
+            }
+            return mask;
         }
 
         /// <summary>

@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using KRPC.SpaceCenter;
 
 namespace KRPC.Bridge.Actuators
 {
@@ -37,6 +38,12 @@ namespace KRPC.Bridge.Actuators
             TestStepRejectsNonFiniteInput ();
             TestTickGapRestartsFilters ();
             TestFilteredWithoutReference ();
+
+            // M3: per-axis guards, write rule, roll command, coupling, fly-by-wire chain.
+            TestAxisGuards ();
+            TestWriteRules ();
+            TestRollCommandAndCoupling ();
+            TestFlyByWireChain ();
 
             // QW6: cached reflection readers against verbatim copies of the legacy ones.
             int reflectionChecks;
@@ -480,13 +487,242 @@ namespace KRPC.Bridge.Actuators
             Check (!o.Computed && !o.Filtered, "tick gap: nothing filtered");
         }
 
+        // ---------------------------------------------------------- M3: axis guards
+
+        /// <summary>
+        /// Deterministic plant for the per-axis guards (also a golden scenario): pitch fully
+        /// saturated (every positive-pitch actuator at its bound, a 31 deg pitch error), a
+        /// roll spin of 0.3 rad/s for ticks 10-69 against a roll limit of 0.1 rad/s, a yaw
+        /// acceleration ramp that no torque explains for ticks 20-84, a tick gap at 95.
+        /// </summary>
+        static void GuardScenarioTick (AttitudeInput inp, int t)
+        {
+            FillEngineLikeInput (inp, 1.0);
+            for (int gi = 0; gi < 4; gi++) {
+                inp.U0 [2 * gi] = inp.UMax [2 * gi];
+                inp.U0 [2 * gi + 1] = 0.0;
+            }
+            inp.U0 [8] = -1.0;           // ctrlState pitch: B < 0, at the bound of + torque
+            inp.U0 [9] = 0.0;
+            inp.U0 [10] = 0.0;
+            for (int j = 0; j < 11; j++)
+                inp.UPref [j] = 0.0;
+            AttitudeMath.PointingError (0.0, 1.0, 0.6, inp.Error);
+            inp.Omega [0] = -0.02;
+            inp.Omega [1] = t >= 10 && t < 70 ? 0.3 : 0.001;
+            inp.Omega [2] = 0.0;
+            inp.OmegaDotMeasured [0] = 0.0;
+            inp.OmegaDotMeasured [1] = 0.0;
+            inp.OmegaDotMeasured [2] = t >= 20 && t < 85 ? 0.02 * (t - 20) : 0.0;
+            inp.Torque [0] = 1.0e4;
+            inp.Torque [1] = 0.0;
+            inp.Torque [2] = 0.0;
+            for (int a = 0; a < 3; a++) {
+                inp.OmegaFf [a] = 0.0;
+                inp.OmegaDotFf [a] = 0.0;
+            }
+            inp.OmegaMax = 0.2;
+            inp.OmegaMaxAxis [0] = 0.2;
+            inp.OmegaMaxAxis [1] = 0.1;
+            inp.OmegaMaxAxis [2] = 0.2;
+            inp.OmegaDotValid = t != 95;
+            inp.ReferenceValid = true;
+        }
+
+        const int GuardScenarioTicks = 110;
+
+        static void TestAxisGuards ()
+        {
+            var g = new AttitudeGains ();
+            var st = new AttitudeLawState ();
+            var work = new AttitudeWork ();
+            var o = new AttitudeOutput ();
+            var inp = new AttitudeInput ();
+            int firstRollOmega = -1, lastRollOmega = -1, firstPitchSat = -1, firstYawResidual = -1;
+            bool rollOther = false;
+            for (int t = 0; t < GuardScenarioTicks; t++) {
+                GuardScenarioTick (inp, t);
+                AttitudeMath.Step (g, inp, st, work, o);
+                if (o.AxisOmegaGuard [1]) {
+                    if (firstRollOmega < 0)
+                        firstRollOmega = t;
+                    lastRollOmega = t;
+                }
+                if (o.AxisSaturationGuard [0] && firstPitchSat < 0)
+                    firstPitchSat = t;
+                if (o.AxisResidualGuard [2] && firstYawResidual < 0)
+                    firstYawResidual = t;
+                if (o.AxisResidualGuard [1] || o.AxisSaturationGuard [1])
+                    rollOther = true;
+                Check (o.AxisGuardMask == AttitudeMath.AxisGuardMask (o), "axis guard mask coherent");
+                if (t == 95)
+                    Check (!o.Filtered && o.AxisGuardMask == 0, "tick gap: no axis guard published");
+                if (t == 96)
+                    Check (!o.AxisSaturationGuard [0], "tick gap: the saturation timer restarts");
+                if (o.Computed)
+                    Check (Near (o.Unrealized [0], Math.Abs (o.NuHedge [0]) / o.Alpha [0], 1e-15),
+                        "unrealized = |nu_h| / alpha");
+            }
+            // Roll spin from tick 10: guard after more than 0.5 s, cleared when it stops.
+            Check (firstRollOmega >= 10 + 24 && firstRollOmega <= 10 + 26,
+                "roll omega guard after 0.5 s (" + firstRollOmega + ")");
+            Check (lastRollOmega == 69, "roll omega guard clears with the spin (" + lastRollOmega + ")");
+            Check (!rollOther, "roll: no residual nor saturation guard");
+            Check (firstPitchSat >= 49 && firstPitchSat <= 53,
+                "pitch saturation guard after 1 s (" + firstPitchSat + ")");
+            Check (firstYawResidual > 20 + 49 && firstYawResidual < 85,
+                "yaw residual guard after 1 s of unexplained acceleration (" + firstYawResidual + ")");
+            // Without a reference, no saturation guard; omega and residual still watched.
+            st.Reset ();
+            for (int t = 0; t < 60; t++) {
+                GuardScenarioTick (inp, t);
+                inp.ReferenceValid = false;
+                AttitudeMath.Step (g, inp, st, work, o);
+                Check (!o.Computed && !o.AxisSaturationGuard [0] && double.IsNaN (o.Unrealized [0]),
+                    "no reference: no saturation guard, unrealized NaN");
+            }
+            Check (o.AxisOmegaGuard [1], "no reference: the omega guard still watches");
+            // Per-axis limit: <= 0 falls back to the law's omega_max.
+            st.Reset ();
+            GuardScenarioTick (inp, 0);
+            inp.OmegaMaxAxis [1] = 0.0;
+            AttitudeMath.Step (g, inp, st, work, o);
+            Check (o.OmegaMaxAxis [1] == 0.2 && o.OmegaMaxAxis [0] == 0.2, "axis limit defaults to omega_max");
+        }
+
+        // -------------------------------------------------------- M3: write rules
+
+        static readonly long[] InformationalMotifs = {
+            AttitudeWrite.MotifResidualGuard, AttitudeWrite.MotifOmegaGuard,
+            AttitudeWrite.MotifSaturationGuard, AttitudeWrite.MotifFlyByWireReordered,
+            AttitudeWrite.MotifWriteFallback, AttitudeWrite.MotifFlyByWireMissed
+        };
+
+        static void TestWriteRules ()
+        {
+            Check (AttitudeWrite.ArmedBodyAxes (0) == 0 && AttitudeWrite.ArmedBodyAxes (1) == 2 &&
+                AttitudeWrite.ArmedBodyAxes (2) == 5 && AttitudeWrite.ArmedBodyAxes (3) == 7,
+                "arm bits to body axes: roll = y, pitch/yaw = x and z");
+            for (int mask = 0; mask < 512; mask++) {
+                for (int axes = 0; axes < 4; axes++) {
+                    long m = AttitudeWrite.ArmedAxisGuardMotifs (mask, axes);
+                    int body = AttitudeWrite.ArmedBodyAxes (axes);
+                    bool r = false, w = false, s = false;
+                    for (int a = 0; a < 3; a++) {
+                        if ((body & (1 << a)) == 0)
+                            continue;
+                        r |= (mask & (1 << (3 * a))) != 0;
+                        w |= (mask & (1 << (3 * a + 1))) != 0;
+                        s |= (mask & (1 << (3 * a + 2))) != 0;
+                    }
+                    Check (((m & AttitudeWrite.MotifAxisResidualGuard) != 0) == r &&
+                        ((m & AttitudeWrite.MotifAxisOmegaGuard) != 0) == w &&
+                        ((m & AttitudeWrite.MotifAxisSaturationGuard) != 0) == s &&
+                        (m & ~(AttitudeWrite.MotifAxisResidualGuard | AttitudeWrite.MotifAxisOmegaGuard |
+                            AttitudeWrite.MotifAxisSaturationGuard)) == 0,
+                        "armed axis guards: only the armed axes count");
+                }
+            }
+            // A guard of pitch/yaw never touches a roll-only arming: the M2 defect 3.
+            Check (AttitudeWrite.ArmedAxisGuardMotifs ((1 << 2) | (1 << 7) | (1 << 0) | (1 << 8) | (1 << 1) | (1 << 6), 1) == 0,
+                "roll armed: pitch and yaw guards ignored");
+            Check (AttitudeWrite.MayWrite (1, 1, 1, true, 0L), "armed roll, clean step: write");
+            for (int bit = 0; bit < 26; bit++) {
+                long motif = 1L << bit;
+                bool informational = Array.IndexOf (InformationalMotifs, motif) >= 0;
+                Check (AttitudeWrite.MayWrite (1, 1, 1, true, motif) == informational,
+                    "motif bit " + bit + (informational ? " does not block" : " blocks"));
+                Check (((AttitudeWrite.BlockingMotifs & motif) != 0) == !informational,
+                    "blocking set, bit " + bit);
+            }
+            Check (!AttitudeWrite.MayWrite (0, 1, 1, true, 0L), "shadow never writes");
+            Check (!AttitudeWrite.MayWrite (1, 2, 1, true, 0L), "pitch/yaw never writes");
+            Check (!AttitudeWrite.MayWrite (1, 1, 2, true, 0L), "watcher fallback stage never writes");
+            Check (!AttitudeWrite.MayWrite (1, 1, 1, false, 0L), "law not computed: no write");
+        }
+
+        static void TestRollCommandAndCoupling ()
+        {
+            double u;
+            Check (AttitudeWrite.RollCommand (0.0, 1000.0, -2.0e4, out u) && Near (u, -0.05, 1e-15),
+                "roll command: u0 + target / column");
+            Check (AttitudeWrite.RollCommand (0.9, -1.0e5, -2.0e4, out u) && u == 1.0, "clamped to +1");
+            Check (AttitudeWrite.RollCommand (-0.9, 1.0e5, -2.0e4, out u) && u == -1.0, "clamped to -1");
+            Check (!AttitudeWrite.RollCommand (0.0, 1.0, 0.0, out u) && double.IsNaN (u), "null column refused");
+            Check (!AttitudeWrite.RollCommand (double.NaN, 1.0, 1.0, out u), "NaN u0 refused");
+            Check (!AttitudeWrite.RollCommand (0.0, double.PositiveInfinity, 1.0, out u), "infinite target refused");
+            // One gimbal (2 columns, span 2 deg) + 3 ctrlState columns.
+            int n = 5;
+            var b = new double[3 * n];
+            var lo = new double[] { -2, -1.5, -1, -1, -1 };
+            var hi = new double[] { 1.5, 2, 1, 1, 1 };
+            b [1 * n + 0] = 1.0e3;
+            b [1 * n + 1] = -2.0e3;
+            b [1 * n + 3] = -4.0e4;
+            double rho = AttitudeWrite.RollCoupling (b, lo, hi, n, 2);
+            Check (Near (rho, (1.0e3 * 2 + 2.0e3 * 2) / 4.0e4, 1e-15), "coupling: gimbal roll authority / roll column");
+            b [1 * n + 3] = 0.0;
+            Check (double.IsPositiveInfinity (AttitudeWrite.RollCoupling (b, lo, hi, n, 2)),
+                "no roll column: infinite coupling (no write)");
+            b [1 * n + 3] = -4.0e4;
+            b [1 * n + 0] = 0.0;
+            b [1 * n + 1] = 0.0;
+            Check (AttitudeWrite.RollCoupling (b, lo, hi, n, 2) == 0.0, "no thrust: no coupling");
+        }
+
+        static void TestFlyByWireChain ()
+        {
+            object vessel = new object ();
+            PilotAddon.Callback kspEmpty = delegate { };
+            PilotAddon.Callback krpc = PilotAddon.Register (vessel);
+            PilotAddon.Callback own = s => { };
+            PilotAddon.Callback other = s => { };
+            Check (AttitudeWrite.IsKrpcPilot (krpc), "kRPC closure-through-Invoke recognised");
+            Check (AttitudeWrite.IsKrpcPilot (PilotAddon.RegisterDirect ()), "kRPC method group recognised");
+            Check (!AttitudeWrite.IsKrpcPilot (own) && !AttitudeWrite.IsKrpcPilot (kspEmpty) &&
+                !AttitudeWrite.IsKrpcPilot (null), "other callbacks are not kRPC");
+            int o, k, l;
+            // KSP's empty delegate, kRPC (registered at the vessel's first FixedUpdate), ours.
+            var chain = (PilotAddon.Callback)Delegate.Combine (Delegate.Combine (kspEmpty, krpc), own);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (l == 3 && k == 1 && o == 2 && AttitudeWrite.OrderVerified (o, k, l),
+                "ours after kRPC and last: verified");
+            // Ours before kRPC: refused, then the EnsureHook move (Remove + Combine) fixes it.
+            chain = (PilotAddon.Callback)Delegate.Combine (Delegate.Combine (kspEmpty, own), krpc);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (o == 1 && k == 2 && !AttitudeWrite.OrderVerified (o, k, l), "ours before kRPC: not verified");
+            chain = (PilotAddon.Callback)Delegate.Combine (Delegate.Remove (chain, own), own);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (o == 2 && k == 1 && AttitudeWrite.OrderVerified (o, k, l), "moved to the end: verified");
+            // A third party registered after us: not last, not verified until moved.
+            chain = (PilotAddon.Callback)Delegate.Combine (chain, other);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (o == 2 && l == 4 && !AttitudeWrite.OrderVerified (o, k, l), "not last: not verified");
+            // kRPC absent (AutoPilot never flew this vessel): never verified.
+            chain = (PilotAddon.Callback)Delegate.Combine (kspEmpty, own);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (k == -1 && !AttitudeWrite.OrderVerified (o, k, l), "kRPC absent: not verified");
+            // Ours absent.
+            chain = (PilotAddon.Callback)Delegate.Combine (kspEmpty, krpc);
+            AttitudeWrite.ClassifyChain (chain, own, out o, out k, out l);
+            Check (o == -1 && !AttitudeWrite.OrderVerified (o, k, l), "ours absent: not verified");
+            AttitudeWrite.ClassifyChain (null, own, out o, out k, out l);
+            Check (o == -1 && k == -1 && l == 0, "empty chain");
+            // Invocation order is the chain order: ours runs after kRPC.
+            var seen = new List<string> ();
+            PilotAddon.Callback kr = s => seen.Add ("krpc");
+            PilotAddon.Callback ow = s => seen.Add ("own");
+            ((PilotAddon.Callback)Delegate.Combine (kr, ow)) (null);
+            Check (seen.Count == 2 && seen [0] == "krpc" && seen [1] == "own", "multicast runs in chain order");
+        }
+
         // ------------------------------------------------------------- golden vectors
 
         static void WriteGolden (string path)
         {
             var g = new AttitudeGains ();
             var sb = new StringBuilder ();
-            sb.Append ("{\n  \"schema\": 1,\n  \"source\": \"krpc_bridge build/tests (AttitudeMath.cs)\",\n");
+            sb.Append ("{\n  \"schema\": 2,\n  \"source\": \"krpc_bridge build/tests (AttitudeMath.cs, AttitudeWrite.cs)\",\n");
             sb.Append ("  \"gains\": {");
             sb.Append ("\"filter_omega_c\": " + D (g.FilterOmegaC) + ", \"filter_zeta\": " + D (g.FilterZeta));
             sb.Append (", \"k_omega_pitch_yaw\": " + D (g.KOmegaPitchYaw) + ", \"k_omega_roll\": " + D (g.KOmegaRoll));
@@ -494,16 +730,111 @@ namespace KRPC.Bridge.Actuators
             sb.Append (", \"gamma\": " + D (g.Gamma) + ", \"effect_floor\": " + D (g.EffectFloor) + ", \"wv_pitch_yaw\": " + D (g.WvPitchYaw));
             sb.Append (", \"wv_roll\": " + D (g.WvRoll) + ", \"alpha_floor\": " + D (g.AlphaFloor));
             sb.Append (", \"omega_max_default\": " + D (g.OmegaMaxDefault) + ", \"tau_residual\": " + D (g.TauResidual));
-            sb.Append (", \"max_iterations\": " + g.MaxIterations + "},\n");
+            sb.Append (", \"max_iterations\": " + g.MaxIterations);
+            sb.Append (", \"guard_residual_ratio\": " + D (g.GuardResidualRatio) + ", \"guard_residual_seconds\": " + D (g.GuardResidualSeconds));
+            sb.Append (", \"guard_omega_ratio\": " + D (g.GuardOmegaRatio) + ", \"guard_omega_seconds\": " + D (g.GuardOmegaSeconds));
+            sb.Append (", \"guard_saturation_ratio\": " + D (g.GuardSaturationRatio) + ", \"guard_saturation_seconds\": " + D (g.GuardSaturationSeconds));
+            sb.Append ("},\n");
             sb.Append ("  \"scenarios\": [\n");
-            string[] names = { "propulse_ample", "propulse_sature", "coast_rcs", "trou_et_reprise" };
+            string[] names = { "propulse_ample", "propulse_sature", "coast_rcs", "trou_et_reprise",
+                "gardes_par_axe" };
             for (int s = 0; s < names.Length; s++) {
                 sb.Append ("    {\"name\": \"" + names [s] + "\", \"ticks\": [\n");
-                GoldenScenario (sb, g, s);
+                if (s < 4)
+                    GoldenScenario (sb, g, s);
+                else
+                    GoldenGuardScenario (sb, g);
                 sb.Append ("    ]}" + (s + 1 < names.Length ? "," : "") + "\n");
             }
-            sb.Append ("  ]\n}\n");
+            sb.Append ("  ],\n");
+            GoldenWrite (sb);
+            sb.Append ("}\n");
             File.WriteAllText (path, sb.ToString ());
+        }
+
+        static void GoldenGuardScenario (StringBuilder sb, AttitudeGains g)
+        {
+            var st = new AttitudeLawState ();
+            var work = new AttitudeWork ();
+            var o = new AttitudeOutput ();
+            var inp = new AttitudeInput ();
+            for (int t = 0; t < GuardScenarioTicks; t++) {
+                GuardScenarioTick (inp, t);
+                AttitudeMath.Step (g, inp, st, work, o);
+                AppendTick (sb, inp, o, t + 1 < GuardScenarioTicks);
+            }
+        }
+
+        /// <summary>
+        /// The write rules of AttitudeWrite (M3) on exhaustive and random inputs, for the
+        /// Python mirror: the decision, the armed-axis guard motifs, the roll command, the
+        /// gimbal-roll coupling.
+        /// </summary>
+        static void GoldenWrite (StringBuilder sb)
+        {
+            sb.Append ("  \"write\": {\"roll_coupling_max\": " + D (AttitudeWrite.RollCouplingMax));
+            sb.Append (", \"guard_hold_seconds\": " + D (AttitudeWrite.GuardHoldSeconds));
+            sb.Append (", \"blocking_motifs\": " + AttitudeWrite.BlockingMotifs.ToString (CultureInfo.InvariantCulture));
+            sb.Append (",\n    \"may_write\": [");
+            bool first = true;
+            for (int mode = 0; mode < 3; mode++)
+                for (int axes = 0; axes < 4; axes++)
+                    for (int stage = 1; stage <= 2; stage++)
+                        for (int computed = 0; computed < 2; computed++)
+                            for (int bit = -1; bit < 26; bit++) {
+                                long motif = bit < 0 ? 0L : 1L << bit;
+                                bool w = AttitudeWrite.MayWrite (mode, axes, stage, computed == 1, motif);
+                                sb.Append ((first ? "" : ", ") + "[" + mode + ", " + axes + ", " + stage + ", " +
+                                    computed + ", " + motif.ToString (CultureInfo.InvariantCulture) + ", " +
+                                    (w ? 1 : 0) + "]");
+                                first = false;
+                            }
+            sb.Append ("],\n    \"armed_axis_guard_motifs\": [");
+            first = true;
+            for (int mask = 0; mask < 512; mask++)
+                for (int axes = 0; axes < 4; axes++) {
+                    long m = AttitudeWrite.ArmedAxisGuardMotifs (mask, axes);
+                    sb.Append ((first ? "" : ", ") + "[" + mask + ", " + axes + ", " +
+                        m.ToString (CultureInfo.InvariantCulture) + "]");
+                    first = false;
+                }
+            sb.Append ("],\n    \"roll_command\": [");
+            var rng = new Random (3131);
+            first = true;
+            for (int k = 0; k < 300; k++) {
+                double u0 = k == 0 ? 0.0 : rng.NextDouble () * 2.0 - 1.0;
+                double target = (rng.NextDouble () * 2.0 - 1.0) * Math.Pow (10, rng.Next (1, 6));
+                double column = k == 1 ? 0.0 : -(rng.NextDouble () * 1.0e5 + 1.0) * (rng.Next (5) == 0 ? -1 : 1);
+                double command;
+                bool ok = AttitudeWrite.RollCommand (u0, target, column, out command);
+                sb.Append ((first ? "" : ", ") + "[" + D (u0) + ", " + D (target) + ", " + D (column) + ", " +
+                    (ok ? 1 : 0) + ", " + DN (command) + "]");
+                first = false;
+            }
+            sb.Append ("],\n    \"roll_coupling\": [");
+            first = true;
+            for (int k = 0; k < 60; k++) {
+                int gimbals = rng.Next (0, 7);
+                int nG = 2 * gimbals;
+                int n = nG + 3;
+                var b = new double[3 * n];
+                var lo = new double[n];
+                var hi = new double[n];
+                for (int i = 0; i < 3 * n; i++)
+                    b [i] = (rng.NextDouble () * 2.0 - 1.0) * Math.Pow (10, rng.Next (2, 6));
+                for (int j = 0; j < n; j++) {
+                    lo [j] = j < nG ? -rng.NextDouble () * 3.0 : -1.0;
+                    hi [j] = j < nG ? rng.NextDouble () * 3.0 : 1.0;
+                }
+                if (k == 0)
+                    b [1 * n + nG + 1] = 0.0;
+                double rho = AttitudeWrite.RollCoupling (b, lo, hi, n, nG);
+                sb.Append ((first ? "" : ",\n      ") + "{\"n\": " + n + ", \"n_gimbal_columns\": " + nG +
+                    ", \"b\": " + V (b, 3 * n) + ", \"u_min\": " + V (lo, n) + ", \"u_max\": " + V (hi, n) +
+                    ", \"rho\": " + DN (rho) + "}");
+                first = false;
+            }
+            sb.Append ("]}\n");
         }
 
         static void GoldenScenario (StringBuilder sb, AttitudeGains g, int scenario)
@@ -541,7 +872,13 @@ namespace KRPC.Bridge.Actuators
                 inp.OmegaDotValid = !(scenario == 3 && (t == 20 || t == 41));
                 inp.ReferenceValid = !(scenario == 3 && t >= 30 && t < 35);
                 AttitudeMath.Step (g, inp, st, work, o);
+                AppendTick (sb, inp, o, t + 1 < ticks);
+            }
+        }
 
+        static void AppendTick (StringBuilder sb, AttitudeInput inp, AttitudeOutput o, bool more)
+        {
+            {
                 sb.Append ("      {\"in\": {");
                 sb.Append ("\"dt\": " + D (inp.Dt));
                 sb.Append (", \"omega\": " + V (inp.Omega, 3));
@@ -554,6 +891,7 @@ namespace KRPC.Bridge.Actuators
                 sb.Append (", \"omega_ff\": " + V (inp.OmegaFf, 3));
                 sb.Append (", \"omega_dot_ff\": " + V (inp.OmegaDotFf, 3));
                 sb.Append (", \"omega_max\": " + D (inp.OmegaMax));
+                sb.Append (", \"omega_max_axis\": " + V (inp.OmegaMaxAxis, 3));
                 sb.Append (", \"n\": " + inp.N);
                 sb.Append (", \"b\": " + V (inp.B, 3 * inp.N));
                 sb.Append (", \"u0\": " + V (inp.U0, inp.N));
@@ -587,13 +925,33 @@ namespace KRPC.Bridge.Actuators
                 sb.Append (", \"residual_guard\": " + (o.ResidualGuard ? "true" : "false"));
                 sb.Append (", \"saturation_guard\": " + (o.SaturationGuard ? "true" : "false"));
                 sb.Append (", \"omega_guard\": " + (o.OmegaGuard ? "true" : "false"));
-                sb.Append ("}}" + (t + 1 < ticks ? "," : "") + "\n");
+                sb.Append (", \"unrealized\": " + VN (o.Unrealized, 3));
+                sb.Append (", \"omega_max_axis\": " + VN (o.OmegaMaxAxis, 3));
+                sb.Append (", \"axis_guard_mask\": " + o.AxisGuardMask);
+                sb.Append ("}}" + (more ? "," : "") + "\n");
             }
         }
 
         static string D (double v)
         {
             return v.ToString ("R", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>A double, or null when not finite (strict JSON; the mirror reads NaN).</summary>
+        static string DN (double v)
+        {
+            return double.IsNaN (v) || double.IsInfinity (v) ? "null" : D (v);
+        }
+
+        static string VN (double[] v, int count)
+        {
+            var sb = new StringBuilder ("[");
+            for (int i = 0; i < count; i++) {
+                if (i > 0)
+                    sb.Append (", ");
+                sb.Append (DN (v [i]));
+            }
+            return sb.Append ("]").ToString ();
         }
 
         static string V (double[] v, int count)
