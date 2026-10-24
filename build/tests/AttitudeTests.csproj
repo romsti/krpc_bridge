@@ -1,0 +1,129 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure-maths tests of AttitudeV1, with no KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/AttitudeTests.csproj   (double hyphen)
+
+    It compiles src/Plugins/Model/AttitudeMath.cs directly (that file uses System
+    only, so the law is tested exactly as the plugin compiles it) and checks:
+      * the bounded weighted least squares against a brute-force QP on random draws;
+      * the square-root reference: bounded, monotone, odd;
+      * the pseudo-control hedge: grows under saturation, leaks back to zero;
+      * the H(z) low-pass: unit DC gain, rejects the Nyquist rate;
+      * the pointing error on known geometry;
+      * M3: the per-axis guards (duration, axis, reset), the write rule of
+        AttitudeWrite.cs (every blocking motif blocks, the others do not), the roll
+        command, the gimbal-roll coupling, and the fly-by-wire chain check against a
+        stand-in of kRPC's PilotAddon (FakeKrpcPilot.cs).
+      * lateral force (chantier 19 suite, TranslationTests.cs): the differential-thrust
+        motifs (zero-sum, bounded, their columns), the throttle box, the feed-forward that
+        cancels the common deflection's torque, the shifted bounds, the write-time scale,
+        the request validity, and a barge hover flown through the unchanged law.
+      * (PivotTests.cs): the per-pivot mapping of a gimbal module with several
+        non-parallel pivots (GimbalPivots.cs): V1 cases not mapped, rows, clamp, and the
+        heavy booster's AR-1 Cluster columns recomputed from its flight geometry.
+      * lot 3, 3.1 (SurfaceTests.cs): the replica of a stock control surface (SurfaceModel.cs)
+        against hand computations, its column, the command law, the actuator, the identity,
+        the response lag, the mono-flight scale guard, the free torque of the law.
+      * (SurfaceLoopTests.cs): the closed loop of the armed surfaces on one axis, with the
+        law and the replica, from the numbers of a recorded flight: the fins' torque
+        in kN.m given to the law as N.m reproduces that flight's roll limit cycle, in N.m it
+        converges.
+      * (SurfaceKappaTests.cs): the physical slope kappa (SurfaceKappa.cs) on a synthetic
+        flight: proven for a correct replica, 1000 and out of tolerance for an earlier change's unit, out for
+        real defects x2.5 and x0.4, the engines kept out, exact across restarts and a merge, no
+        allocation per step, the jackknife's coverage.
+      * an earlier change a (SurfaceKappaRollTests.cs): the roll excitation (SurfaceKappaRoll.cs): its computed
+        constants, born closed, every condition, the waveform and the plan, the stop, no allocation,
+        and a closed loop on roll: proven within N_h batches, the leak of the inertia and wheel errors
+        bounded, real roll defects out of tolerance.
+      * (SurfaceOwnershipTests.cs): a surface engaged only on axes the loop owns (written by its
+        own link at the previous step, still permitted), the axes a surface needs (its column's and its
+        command's), the sanction bits, and the bumpless change of the law's M at an engagement.
+      * (CoastWriteTests.cs): option 16, the coast write bits 4 (surfaces out of the law) and 8
+        (pitch/yaw holds its reference past 0.3 s): born closed, no existing rule changed, the bits.
+      * (RcsInFlightTests.cs): option 32, the RCS torque in flight (RcsInFlight.cs): the dead zone
+        and columns of ModuleRCS, no existing rule changed, and the closed loop on one axis with the law
+        and a stock RCS (fired one render frame after the fly-by-wire): the flight's six-step cycle
+        without the option, the trim met without saturation with it.
+      * (BoostbackWriteTests.cs): option 64, the boostback write bit 16 (pitch/yaw only while the
+        gimbals lead the ctrlState channel, latched once lost): born closed, no existing rule changed,
+        the super hope's crossover, and the channel's sequence over a boostback.
+      * (GimbalTrimTests.cs): option 128, the gimbals without thrust to neutral and their
+        columns at the coming thrust (GimbalSpool.cs, AttitudeMath's TrimNullColumns): born closed, no
+        existing rule changed, KSP's spool, the dead gimbal held at its bound without it and at neutral
+        with it, and a closed loop of a burn, a coast and an ignition (the kick). Its golden vectors go
+        to golden/attitude_v1_golden_trim.json.
+      * (GimbalAuthorityTests.cs): the pure part of gimbal_authority_v1 (GimbalAuthority.cs):
+        quaternions in Unity's convention, a nozzle carried back to its pivot's rest pose, the
+        authority per kN on the heavy booster's AR-1 Cluster.
+    It then writes golden vectors (JSON) that the Python mirror of the law replays
+    (the client): same inputs, same outputs.
+
+    Exit code 0 means every check passed. build.cmd runs it before the solution build.
+    BridgeUseStubs keeps Directory.Build.targets from adding the KSP references.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.AttitudeTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Model.Tests</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+    <!-- CS0649: ReflectionCache.UseLegacy is only set by DynamicsV3, absent here. -->
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="ReflectionTests.cs" />
+    <Compile Include="FakeKrpcPilot.cs" />
+    <Compile Include="TranslationTests.cs" />
+    <Compile Include="InactiveVesselTests.cs" />
+    <Compile Include="PivotTests.cs" />
+    <Compile Include="FamilyEvidenceTests.cs" />
+    <Compile Include="EffectorTests.cs" />
+    <Compile Include="SurfaceTests.cs" />
+    <Compile Include="SurfaceLoopTests.cs" />
+    <Compile Include="SurfaceKappaTests.cs" />
+    <Compile Include="SurfaceKappaRollTests.cs" />
+    <Compile Include="SurfaceOwnershipTests.cs" />
+    <Compile Include="ContactHoldTests.cs" />
+    <Compile Include="CoastWriteTests.cs" />
+    <Compile Include="RcsInFlightTests.cs" />
+    <Compile Include="BoostbackWriteTests.cs" />
+    <Compile Include="GimbalTrimTests.cs" />
+    <Compile Include="GimbalAuthorityTests.cs" />
+    <Compile Include="MainThrottleTests.cs" />
+    <Compile Include="RollTargetTests.cs" />
+    <Compile Include="ReferenceRingTests.cs" />
+    <Compile Include="EngineAllocationTests.cs" />
+    <Compile Include="EngineAllocationWriteTests.cs" />
+    <Compile Include="RcsCombinedTests.cs" />
+    <Compile Include="..\..\src\Plugins\Model\AttitudeMath.cs" />
+    <Compile Include="..\..\src\Plugins\Model\AttitudeWrite.cs" />
+    <Compile Include="..\..\src\Plugins\Model\AttitudeTranslation.cs" />
+    <Compile Include="..\..\src\Plugins\Telemetry\ReflectionCache.cs" />
+    <Compile Include="..\..\src\Plugins\Model\GimbalPivots.cs" />
+    <Compile Include="..\..\src\Plugins\Model\EffectorRegistry.cs" />
+    <Compile Include="..\..\src\Plugins\Model\SurfaceModel.cs" />
+    <Compile Include="..\..\src\Plugins\Model\SurfaceKappa.cs" />
+    <Compile Include="..\..\src\Plugins\Model\SurfaceKappaRoll.cs" />
+    <Compile Include="..\..\src\Plugins\Model\RcsInFlight.cs" />
+    <Compile Include="..\..\src\Plugins\Model\GimbalSpool.cs" />
+    <Compile Include="..\..\src\Plugins\Model\GimbalAuthority.cs" />
+    <Compile Include="..\..\src\Plugins\Model\MainThrottle.cs" />
+    <Compile Include="..\..\src\Plugins\Model\ReferenceRing.cs" />
+    <Compile Include="..\..\src\Plugins\Model\EngineAllocation.cs" />
+    <Compile Include="..\..\src\Plugins\Model\RcsCombined.cs" />
+  </ItemGroup>
+
+</Project>

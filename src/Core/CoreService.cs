@@ -132,6 +132,157 @@ namespace KRPC.Bridge.Core
             return false;
         }
 
+        static IList<string> cachedManifest;
+
+        /// <summary>
+        /// What is loaded and which commit it was built from, one row per kRPC service and per
+        /// versioned layout of every loaded KRPC.Bridge assembly. Read once at the start of a
+        /// session: the answer cannot change while the game runs.
+        ///
+        /// Row 0 is a header of tab-separated key=value pairs: protocol (1), schema (1), n (the
+        /// number of rows that follow the column row), assemblies, git_sha (the one commit every
+        /// assembly was built from, "mixed" when they differ), git_dirty (1 when any assembly was
+        /// built from a dirty tree or carries no stamp) and consistent (1 when one clean build is
+        /// loaded). Row 1 names the columns: assembly, service, layout, protocol, schema, git_sha,
+        /// git_dirty, source_date, informational_version, assembly_version. Then one row per
+        /// entry: a service row has an empty layout; a layout row gives the protocol and schema
+        /// numbers this build knows for that layout ("?" when the constant is missing, empty
+        /// when the layout has no schema number). Columns are only ever appended: map them by
+        /// name.
+        ///
+        /// source_date is the commit's date, not the time of the build, so two builds of one
+        /// commit stay identical bit for bit. Compare git_sha with the manifest.json deployed
+        /// next to the DLLs to prove that what runs is what was deployed.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> ManifestV1 ()
+        {
+            if (cachedManifest != null)
+                return cachedManifest;
+            var lines = BridgeManifest.Lines (System.AppDomain.CurrentDomain.GetAssemblies ());
+            // Cache only a manifest that found the Core itself: anything less was read too early.
+            if (lines.Count > 2)
+                cachedManifest = lines;
+            return lines;
+        }
+
+        // ------------------------------------------------------------------
+        // Core v2: game clock, vessel registry, bit registry (refactor R1)
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// The game clock (Core v2), read-only. Row 0: tab-separated key=value pairs: protocol
+        /// (1), tick (master physics tick: one per physics step), fixed_time, ut (NaN without a
+        /// Planetarium), dt, warp_rate, real_time (the values frozen when the step opened, at
+        /// the TimingManager stage ObscenelyEarly or in the Core's FixedUpdate), hooked (1 when
+        /// the ObscenelyEarly callback is registered), early_opens, core_opens, n. Row 1 names
+        /// the columns: name, value, last_tick. Then one row per tick counter the clock hosts:
+        /// the counters the frames have always published (core.fixed_updates =
+        /// conn.bridge.ticks, actuators.pump_tick, attitude.tick), their value and the master
+        /// tick of their last increment: the alias table between them and the one tick.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> ClockV1 ()
+        {
+            return ClockLines ();
+        }
+
+        internal static List<string> ClockLines ()
+        {
+            var c = GameClock.State;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var counters = c.Counters;
+            var lines = new List<string> (counters.Count + 2);
+            lines.Add ("protocol=" + GameClock.Protocol.ToString (inv) +
+                "\ttick=" + c.Tick.ToString (inv) +
+                "\tfixed_time=" + c.FixedTime.ToString ("R", inv) +
+                "\tut=" + c.Ut.ToString ("R", inv) +
+                "\tdt=" + c.Dt.ToString ("R", inv) +
+                "\twarp_rate=" + c.WarpRate.ToString ("R", inv) +
+                "\treal_time=" + c.RealTime.ToString ("R", inv) +
+                "\thooked=" + (GameClock.Hooked ? "1" : "0") +
+                "\tearly_opens=" + GameClock.EarlyOpens.ToString (inv) +
+                "\tcore_opens=" + GameClock.CoreOpens.ToString (inv) +
+                "\tn=" + counters.Count.ToString (inv));
+            lines.Add ("name\tvalue\tlast_tick");
+            foreach (var counter in counters)
+                lines.Add (counter.Name + "\t" + counter.Value.ToString (inv) + "\t" +
+                    counter.LastTick.ToString (inv));
+            return lines;
+        }
+
+        /// <summary>
+        /// The vessel registry (Core v2), read-only. Row 0: key=value pairs: protocol (1), tick,
+        /// active (persistentId of the active vessel), n. Row 1 names the columns:
+        /// persistent_id, active, loaded, packed, event_generation (+1 at every topology
+        /// GameEvent naming the vessel), last_event_tick, fingerprint (hex), fingerprint_tick,
+        /// walks (fingerprints computed), memo_hits (served from the window memo),
+        /// cross_window_checks, unevented_changes (the fingerprint changed between two windows
+        /// of one physics step WITHOUT a topology event: a per-step memo would have been wrong),
+        /// evented_changes, name. One row per vessel the mod has fingerprinted or seen in a
+        /// topology event (at most 64; cleared at a scene change).
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> VesselsV1 ()
+        {
+            return VesselRegistry.Lines ();
+        }
+
+        /// <summary>
+        /// The declared bit sets (Core v2 bit registry), one row per set: "name\towner\tbits",
+        /// sorted. Each set is a mask some layout publishes (AttitudeV1 motifs, capabilities,
+        /// lateral-force reasons, DynamicsV3 and DynamicsExtV1 capabilities, options...).
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> BitSetsV1 ()
+        {
+            return BitRegistry.SetLines ();
+        }
+
+        /// <summary>
+        /// The bits of one set. Row 0: key=value pairs protocol (1), set, owner, n. Row 1 names
+        /// the columns: bit, name, kind, note. Then one row per declared bit, by index. kind is
+        /// blocking (forbids every channel it applies to), blocking_roll, blocking_pitch_yaw,
+        /// informational, capability, reason or option. Unknown set: ArgumentException listing
+        /// the known ones.
+        /// </summary>
+        /// <param name="set">A name from <see cref="BitSetsV1"/>.</param>
+        [KRPCProcedure]
+        public static IList<string> BitsV1 (string set)
+        {
+            return BitRegistry.Lines (set);
+        }
+
+        /// <summary>
+        /// The schema descriptors the loaded plugins declare (refactor R1), one row per layout:
+        /// "name\tservice\tprotocol\tschema\tkind\tfields", sorted. kind is frame, history,
+        /// return, status, block or text.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<string> LayoutsV1 ()
+        {
+            return LayoutRegistry.NameLines ();
+        }
+
+        /// <summary>
+        /// The schema descriptor of one layout, from which a client generates its decoder. Row 0:
+        /// key=value pairs protocol (1, this format), layout, service, layout_protocol,
+        /// layout_schema, kind, sections, fields, note. Then, per section, a line
+        /// "#section\tname\tcount\tstride\tprefixed\tframe" (count: 1, an integer, "*" until the
+        /// end of the list, or "@field" read from an earlier field; stride: an integer or
+        /// "@field"; prefixed 1: each repetition is a length-prefixed frame of the layout named
+        /// in frame), followed by its fields, one line each: "section\toffset\tname\tunit"
+        /// (offset within the section or within one row of it; unit "" when dimensionless or a
+        /// code). Fields are only ever appended (the schema is raised); a layout never depends
+        /// on a mode. Unknown name: ArgumentException listing the known ones.
+        /// </summary>
+        /// <param name="name">A name from <see cref="LayoutsV1"/>.</param>
+        [KRPCProcedure]
+        public static IList<string> LayoutV1 (string name)
+        {
+            return LayoutRegistry.Lines (name);
+        }
+
         // ------------------------------------------------------------------
         // Event log
         // ------------------------------------------------------------------
@@ -165,6 +316,32 @@ namespace KRPC.Bridge.Core
                 rows.Add (row.ToString ());
             }
             return rows;
+        }
+
+        /// <summary>
+        /// The event bus version 2 (refactor lot 3, line 3.3), read-only, built for ONE call per
+        /// client tick: every record since <paramref name="sinceSeq"/>, oldest first, stamped with
+        /// the master tick of the game clock and the UT, naming its vessels and part by
+        /// persistentId. Text in the manifest_v1 style. Row 0: tab-separated key=value pairs:
+        /// protocol (1), schema (1), since (as asked), first_seq and last_seq (what the
+        /// 1024-record ring holds now), lost (records after since already overwritten: polled too
+        /// slowly), truncated (1 when maxRows cut the answer: poll again from the last seq),
+        /// tick and ut (when the call ran), capacity, n. Row 1 names the columns: seq, tick, ut,
+        /// kind, vessel_pid, vessel_id, other_pid, part_pid, value, detail (appended only: map
+        /// them by name). Then one row per record. Every record of poll_events is here too (same
+        /// kind and detail), plus the kinds only V2 has: vessel.decouple, vessel.undock,
+        /// part.joint_break, vessel.part_count, vessel.ease_start, vessel.ease_stop,
+        /// vessel.off_rails, vessel.on_rails, vessel.create, vessel.load, vessel.unload,
+        /// warp.rate, and the contact.* transitions of conn.telemetry.contact_v1. A since
+        /// greater than last_seq means the game restarted (sequence numbers start at 1 per
+        /// session): start again from 0.
+        /// </summary>
+        /// <param name="sinceSeq">Highest seq already seen; 0 on the first call.</param>
+        /// <param name="maxRows">At most this many rows (0 or less: all the ring has after sinceSeq).</param>
+        [KRPCProcedure]
+        public static IList<string> PollEventsV2 (long sinceSeq, int maxRows)
+        {
+            return EventBus.PollV2 (sinceSeq, maxRows);
         }
 
         /// <summary>

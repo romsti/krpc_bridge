@@ -16,9 +16,9 @@ using System.Reflection;
 // Bump the minor number when you add members. Bump the major only on a breaking change,
 // and bump the dependency declared by every plugin at the same time.
 // ---------------------------------------------------------------------------------
-[assembly: KSPAssembly ("KRPC.Bridge.Core", 1, 0)]
+[assembly: KSPAssembly ("KRPC.Bridge.Core", 1, 3)]
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Core")]
-[assembly: AssemblyDescription ("Shared runtime for the krpc_bridge plugins: main-thread dispatch, background jobs, GameEvents bus, mod discovery.")]
-[assembly: AssemblyVersion ("1.1.0.0")]
-[assembly: AssemblyFileVersion ("1.1.0.0")]
+[assembly: AssemblyDescription ("Shared runtime for the krpc_bridge plugins: game clock, vessel registry, leases, frame recorder, bit and layout registries, main-thread dispatch, background jobs, GameEvents bus, mod discovery.")]
+[assembly: AssemblyVersion ("2.0.0.0")]
+[assembly: AssemblyFileVersion ("2.0.0.0")]

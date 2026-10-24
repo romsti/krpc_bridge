@@ -3,6 +3,13 @@ bin/
 obj/
 dist/
 
+# Release files prepared by hand (zips, release notes): uploaded to the release page, never committed
+release_*/
+
+# Worktrees of the working branches, kept inside the repo folder. Untracked, they would make
+# the main checkout "dirty" for the build stamp (tools/build_stamp.py).
+.worktrees/
+
 # Remembered KSP install, per machine (tools/find_ksp.py)
 ksp.path
 *.user

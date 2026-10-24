@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure tests of Core v2 (refactor R1), with no KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/core/CoreTests.csproj   (double hyphen)
+
+    It compiles the PURE Core files directly (System only), exactly as the Core compiles them:
+      * Recorder.cs against a VERBATIM copy of the LinkedList rings it replaces
+        (LegacyRing.cs: DynamicsV3.ReadRing and AeroActuatorV1.ReadHistory as they flew),
+        on thousands of random push / reserve / clear / read sequences, compared double by
+        double through their 64 bits: same header, same frames, same order, same count;
+      * Lease.cs against the legacy float arithmetic of the six leases (now + seconds stored
+        as a float; expired when now >= that; remaining max(0, end - now)), bit for bit;
+      * ClockCore.cs (one tick per Open, hosted counters record the master tick);
+      * BitRegistry.cs (declare, idempotence, clashes, wire format);
+      * Frames.cs (cross product, world/body round trip);
+      * EventLogV2.cs (refactor lot 3: the event bus V2 ring, its incremental read and wire text).
+
+    Exit code 0 means every check passed. build.cmd runs it before the solution build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.CoreTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Core</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="CoreTests.cs" />
+    <Compile Include="LegacyRing.cs" />
+    <Compile Include="..\..\..\src\Core\ClockCore.cs" />
+    <Compile Include="..\..\..\src\Core\Lease.cs" />
+    <Compile Include="..\..\..\src\Core\Recorder.cs" />
+    <Compile Include="..\..\..\src\Core\BitRegistry.cs" />
+    <Compile Include="..\..\..\src\Core\Frames.cs" />
+    <Compile Include="..\..\..\src\Core\LayoutRegistry.cs" />
+    <Compile Include="..\..\..\src\Core\BridgeErrors.cs" />
+    <Compile Include="..\..\..\src\Core\EventLogV2.cs" />
+  </ItemGroup>
+
+</Project>

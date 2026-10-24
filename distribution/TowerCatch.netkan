@@ -1,0 +1,44 @@
+{
+    "spec_version": "v1.18",
+    "identifier": "TowerCatch",
+    "name": "TowerCatch",
+    "abstract": "The booster catch tower of KRPC.Bridge (conn.tower_site): a ModuleManager patch and a ready-made tower craft, as a package of its own.",
+    "description": "The parts and the craft of the booster catch tower that KRPC.Bridge's tower_spawn_v1 puts on the ground: TowerCatch.cfg, a ModuleManager patch that makes TG.* copies of parts of Modular Launch Pads, HullCamera VDS and the two Kerbal Space Program expansions, and the craft 'Tour Catch v5'. The services that place and read the tower stay in KRPC.Bridge (KRPC.Bridge.Tower.dll); this package is only what the tower is made of, so that installing the bridge does not install it. REQUIRES TWO PAID EXPANSIONS THAT CKAN CANNOT INSTALL: Breaking Ground (the hinges of the arms) and Making History (the tubes around the hinges). Without either of them KSP cannot load the tower, and a tower already in a save is removed by the game at load. Nothing of the mods or of the game is redistributed: the patch only names the parts installed on your machine. Never keep the old copy of the patch in GameData/KRPC.Bridge/Patches next to this one.",
+
+    "author": "romsti",
+    "license": "MIT",
+
+    "$kref": "#/ckan/github/romsti/krpc_bridge",
+    "$vref": "#/ckan/ksp-avc",
+
+    "x_netkan_github": {
+        "asset_match": "^TowerCatch-.*\\.zip$"
+    },
+
+    "resources": {
+        "homepage": "https://romsti.github.io/krpc_bridge/",
+        "repository": "https://github.com/romsti/krpc_bridge",
+        "bugtracker": "https://github.com/romsti/krpc_bridge/issues"
+    },
+
+    "tags": [ "parts", "config" ],
+
+    "depends": [
+        { "name": "ModuleManager" },
+        { "name": "kRPC", "min_version": "0.7.0" },
+        { "name": "KRPC-Bridge", "min_version": "2.0.0" },
+        { "name": "ModularLaunchPads" },
+        { "name": "HullcamVDSContinued" }
+    ],
+
+    "conflicts": [
+        { "name": "KRPC-Bridge", "max_version": "1.1.0" }
+    ],
+
+    "install": [
+        {
+            "find": "TowerCatch",
+            "install_to": "GameData"
+        }
+    ]
+}

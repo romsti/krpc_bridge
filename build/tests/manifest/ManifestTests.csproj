@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure tests of the manifest (conn.bridge.manifest_v1), with no KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/manifest/ManifestTests.csproj   (double hyphen)
+
+    It compiles src/Core/BridgeManifest.cs directly (System and System.Reflection only, so the
+    manifest is tested exactly as the Core compiles it) and checks it against THIS assembly,
+    which carries a build stamp, two stand-in kRPC services and a table of constants of its
+    own: the stamp read back, the services found and named as kRPC names them, the constants
+    read without running a static constructor, a missing constant reported, the header's
+    consistency verdict, the wire format, and the shape of the real Known table.
+
+    The real table is checked against the real DLLs by build/scan (build.cmd step 4), which
+    needs a KSP install. Exit code 0 means every check passed. build.cmd runs it before the
+    solution build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.ManifestTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Core</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ManifestTests.cs" />
+    <Compile Include="..\..\..\src\Core\BridgeManifest.cs" />
+  </ItemGroup>
+
+</Project>

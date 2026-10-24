@@ -17,12 +17,12 @@ using System.Reflection;
 //
 // Check it landed:
 //     findstr /C:"KRPC.Bridge" "D:\Games\KSP_1.12.5\KSP.log"
-[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 0)]
+[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 3)]
 
 // Add one line per plugin this plugin depends on:
 // [assembly: KSPAssemblyDependency ("KRPC.Bridge.Terrain", 1, 0)]
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Template")]
 [assembly: AssemblyDescription ("Skeleton bridge plugin. Copy to start a new one.")]
-[assembly: AssemblyVersion ("1.1.0.0")]
-[assembly: AssemblyFileVersion ("1.1.0.0")]
+[assembly: AssemblyVersion ("2.0.0.0")]
+[assembly: AssemblyFileVersion ("2.0.0.0")]

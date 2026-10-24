@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    conn.stock (conn.stock_delta_v before refactor R3) - the state of KSP's stock delta-v simulation (VesselDeltaV), and a way
+    to restart it, for Terminal Guidance's ascent shadow (mode ASCENSION, lot L6).
+
+    A SEPARATE ASSEMBLY ON PURPOSE, with no reference to KRPC.Bridge.Core, like Tower: it is
+    deployed on its own next to whatever Core and plugins the install already runs, and must not
+    depend on their version. If it fails to load, KSP skips it and every other conn.* service is
+    untouched.
+
+    Hard reference to KRPC.SpaceCenter: the procedures take a SpaceCenter.Vessel.
+
+    Excluded from build/verify (stub build): it only makes sense against the real game.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Stock</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Stock</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(KRPCPath)\KRPC.SpaceCenter.dll">
+      <Name>KRPC.SpaceCenter</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

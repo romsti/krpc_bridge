@@ -17,9 +17,9 @@ using System.Reflection;
 // available() = False.
 // ---------------------------------------------------------------------------------
 [assembly: KSPAssembly ("KRPC.Bridge.Trajectories", 1, 0)]
-[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 0)]
+[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 3)]
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Trajectories")]
 [assembly: AssemblyDescription ("kRPC service for the Trajectories mod: atmospheric impact prediction, target and descent profile.")]
-[assembly: AssemblyVersion ("1.1.0.0")]
-[assembly: AssemblyFileVersion ("1.1.0.0")]
+[assembly: AssemblyVersion ("2.0.0.0")]
+[assembly: AssemblyFileVersion ("2.0.0.0")]

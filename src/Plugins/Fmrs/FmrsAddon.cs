@@ -19,6 +19,19 @@ namespace KRPC.Bridge.Fmrs
         void Awake ()
         {
             ModRegistry.Register ("FMRS", FmrsApi.Resolve);
+            // The dropped-stage table (DroppedStagesV1) records separations as they fire,
+            // in every scene, for the whole session.
+            DroppedStagesCapture.Subscribe ();
+            // Refactor R1: the schema descriptor of the table (conn.bridge.layout_v1).
+            try {
+                var l = LayoutRegistry.Declare ("dropped_stages_v1", "FMRS", "Fmrs",
+                    DroppedStagesFormat.Protocol, DroppedStagesFormat.Schema, LayoutRegistry.KindText);
+                l.Once ("header", "protocol", "schema", "n");
+                l.Rows ("columns", "*", DroppedStagesFormat.Columns.Length.ToString (
+                    System.Globalization.CultureInfo.InvariantCulture), DroppedStagesFormat.Columns);
+            } catch (Exception exc) {
+                BridgeLog.Error ("FMRS", "layout registry: " + exc.Message);
+            }
         }
     }
 

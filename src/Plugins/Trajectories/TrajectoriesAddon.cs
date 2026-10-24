@@ -118,6 +118,13 @@ namespace KRPC.Bridge.Trajectories
         internal static PropertyInfo AlwaysUpdateProp;     // bool { get; set; }
         internal static PropertyInfo GetVersionProp;       // string { get; }  "2.4.5"
 
+        // -- aerodynamic model -------------------------------------------
+        // Not part of Trajectories.API: the internal static void
+        // Trajectories.Trajectory.InvalidateAerodynamicModel(), what the mod's own settings call to
+        // drop its cached forces. Internal, so it may disappear in a release; it is resolved here,
+        // named in the report when absent, and never feeds Resolved.
+        internal static MethodInfo InvalidateAerodynamicModel;
+
         /// <summary>True when the type and the two members the oracle cannot do without resolved.</summary>
         internal static bool Resolved { get; private set; }
 
@@ -177,6 +184,15 @@ namespace KRPC.Bridge.Trajectories
 
             AlwaysUpdateProp = Property ("AlwaysUpdate", missing);
             GetVersionProp = Property ("GetVersion", missing);
+
+            InvalidateAerodynamicModel = null;
+            var trajectoryType = ModRegistry.FindType (assembly, "Trajectories.Trajectory");
+            if (trajectoryType != null)
+                InvalidateAerodynamicModel = trajectoryType.GetMethod (
+                    "InvalidateAerodynamicModel", BindingFlags.Static | BindingFlags.NonPublic,
+                    null, Type.EmptyTypes, null);
+            if (InvalidateAerodynamicModel == null)
+                missing.Add ("Trajectory.InvalidateAerodynamicModel() (internal)");
 
             Resolved = GetImpactPosition != null && GetTimeTillImpact != null;
 

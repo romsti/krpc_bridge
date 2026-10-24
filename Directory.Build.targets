@@ -5,6 +5,12 @@
     project set, but too late to change where the output goes; see the note below.
   -->
 
+  <!-- kRPC 0.7 shapes (see KRPCVersionText in Directory.Build.props). The stubs of the verify
+       harness keep the 0.6 shapes, so a stubs build never defines it. -->
+  <PropertyGroup Condition="'$(BridgeUseStubs)'!='true' and $(KRPCVersionText.Contains('&quot;MINOR&quot;: 7, &quot;PATCH&quot;'))">
+    <DefineConstants>$(DefineConstants);KRPC_07</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
     <!-- Supplies the .NET Framework reference assemblies, so no Visual Studio needed.
          Without it the build fails with MSB3644. PrivateAssets stops it flowing into
@@ -23,12 +29,20 @@
     build/stubs instead and needs no KSP install at all.
   -->
   <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
-    <Reference Include="$(ManagedPath)\UnityEngine*.dll">
-      <Name>UnityEngine</Name>
-      <Private>False</Private>
-    </Reference>
     <Reference Include="$(ManagedPath)\Assembly-CSharp.dll">
       <Name>Assembly-CSharp</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    BridgePure (refactor R3, KRPC.Bridge.Model): no Unity and no kRPC reference at all, so a
+    Unity or kRPC type does not compile there. Assembly-CSharp stays, above, for the KSPAssembly
+    attribute KSP's AssemblyLoader orders the DLLs by.
+  -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true' and '$(BridgePure)'!='true'">
+    <Reference Include="$(ManagedPath)\UnityEngine*.dll">
+      <Name>UnityEngine</Name>
       <Private>False</Private>
     </Reference>
     <Reference Include="$(ManagedPath)\Assembly-CSharp-firstpass.dll">
@@ -66,6 +80,42 @@
     -->
     <BridgeOutDir>$(OutputPath)</BridgeOutDir>
   </PropertyGroup>
+
+  <!--
+    The build stamp: every shipped assembly says which commit it comes from and whether the
+    tree was clean (AssemblyInformationalVersion "<mod version>+<sha>", plus AssemblyMetadata
+    KRPC.Bridge.GitSha / GitDirty / SourceDate, read back by conn.bridge.manifest_v1()).
+
+    build.cmd computes the stamp ONCE (tools/build_stamp.py, after the tests, before the
+    solution build) and passes the file to every project with -p:BridgeStampFile=..., so all
+    nine DLLs of one build carry the same stamp. A project built on its own, with plain
+    `dotnet build`, writes its own copy into obj/ through the same script.
+
+    Deterministic: the file holds the commit's date, never the time of the build, so two builds
+    of one commit stay identical bit for bit (see tools/build_stamp.py).
+
+    Only for the shipped projects under src/: the stub type-check, the tests and the scanner
+    set BridgeUseStubs and are left alone.
+  -->
+  <PropertyGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <_BridgeShipped>$([System.String]::Copy('$(MSBuildProjectFullPath)').StartsWith('$(MSBuildThisFileDirectory)src'))</_BridgeShipped>
+  </PropertyGroup>
+
+  <Target Name="BridgeBuildStamp" BeforeTargets="CoreCompile"
+          Condition="'$(BridgeUseStubs)'!='true' and '$(_BridgeShipped)'=='true'">
+    <PropertyGroup>
+      <_BridgeStampFile>$(BridgeStampFile)</_BridgeStampFile>
+      <_BridgeStampFile Condition="'$(_BridgeStampFile)'==''">$(MSBuildProjectDirectory)\$(IntermediateOutputPath)BridgeStamp.g.cs</_BridgeStampFile>
+    </PropertyGroup>
+    <Exec Condition="'$(BridgeStampFile)'==''"
+          Command="python &quot;$(MSBuildThisFileDirectory)tools\build_stamp.py&quot; --write &quot;$(MSBuildProjectDirectory)\$(IntermediateOutputPath).&quot;"
+          StandardOutputImportance="low" />
+    <Error Condition="!Exists('$(_BridgeStampFile)')"
+           Text="No build stamp at '$(_BridgeStampFile)'. Build with build.cmd, or make sure python can run tools\build_stamp.py: a DLL without a stamp cannot be traced to a commit." />
+    <ItemGroup>
+      <Compile Include="$(_BridgeStampFile)" />
+    </ItemGroup>
+  </Target>
 
   <!-- Fail with a readable message instead of a wall of CS0246. -->
   <Target Name="ValidateKSPPaths" BeforeTargets="ResolveAssemblyReferences"

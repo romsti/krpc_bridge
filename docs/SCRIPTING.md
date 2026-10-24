@@ -4,7 +4,7 @@ How to drive KRPC.Bridge from a Python script. Assumes you already know kRPC; if
 not, start with the [kRPC tutorial](https://krpc.github.io/krpc/tutorials.html) and come
 back.
 
-Everything here is plain `krpc` (`pip install "krpc>=0.6,<0.7"`) — this mod ships no
+Everything here is plain `krpc` (`pip install "krpc>=0.7,<0.8"`) — this mod ships no
 client library of its own, and there is nothing to import beyond `krpc` itself. The
 bridge adds `conn.bridge`, `conn.fmrs`, `conn.ocisly` and `conn.mech_jeb` to the
 connection you already have, and `help(conn.fmrs)` in a REPL gives you the reference.

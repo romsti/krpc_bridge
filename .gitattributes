@@ -1,2 +1,20 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Rewritten by build\tests (build.cmd step 1b) with LF line endings. Checked out with LF too,
+# so a build does not leave the file "modified" on a core.autocrlf=true machine.
+build/tests/golden/attitude_v1_golden.json text eol=lf
+
+# Shipped as-is into GameData: checked out with LF so a build reproduces the deployed bytes.
+distribution/** text eol=lf
+LICENSE text eol=lf
+NOTICE text eol=lf
+
+# The golden vectors of the AttitudeV1 options, rewritten by build\tests like the file above.
+build/tests/golden/attitude_v1_golden_trim.json text eol=lf
+build/tests/golden/attitude_v1_golden_free.json text eol=lf
+build/tests/golden/attitude_v1_golden_throttle.json text eol=lf
+build/tests/golden/attitude_v1_golden_roll.json text eol=lf
+build/tests/golden/attitude_v1_golden_ring.json text eol=lf
+build/tests/golden/attitude_v1_golden_allocation.json text eol=lf
+build/tests/golden/attitude_v1_golden_rcs.json text eol=lf

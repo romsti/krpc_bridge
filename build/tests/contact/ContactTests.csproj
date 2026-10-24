@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure tests of ContactV1's latch (conn.telemetry.contact_v1, refactor lot 3), with no KSP, no
+    Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/contact/ContactTests.csproj   (double hyphen)
+
+    It compiles the PURE Telemetry file directly (System only), exactly as the plugin compiles it:
+    ContactLatch.cs, the state of one vessel step by step: a touchdown on two legs (first contact,
+    each leg, all legs, Vessel.Landed, the LANDED situation), a bounce that starts a new episode,
+    a watch started on the pad, a body contact and a collision alone, a retracted leg, a second
+    call within one tick, the wheel latches followed across a rescan, and no allocation per step.
+
+    A folder of its own: two SDK projects in one folder would share obj/. Exit code 0 means
+    every check passed. build.cmd runs it before the solution build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.ContactTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Telemetry</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ContactTests.cs" />
+    <Compile Include="..\..\..\src\Plugins\Telemetry\ContactLatch.cs" />
+  </ItemGroup>
+
+</Project>

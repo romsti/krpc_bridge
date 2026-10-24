@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure tests of the staging locks (conn.stock.stage_in_frame_v2, staging_locks_v1) and of the part
+    module reads (module_states_v1, module_trigger_event_v1, module_field_v1, module_field_by_id_v1,
+    an earlier change), with no KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/stock/StockTests.csproj   (double hyphen)
+
+    It compiles src/Plugins/Stock/StagingLocks.cs and ModuleStates.cs directly (System only), exactly as
+    the plugin compiles them. StagingLocks is fed lock stacks as InputLockManager.lockStack holds them:
+    the focus lock alone (every control type, what KSP sets when its window loses the focus), the Alt+L
+    stage lock, a lock that does not hold the staging, several at once, an empty or null stack.
+    ModuleStates is fed the events and fields of a grid fin and of an engine module with their awkward
+    cases (hidden, inactive, repeated), and must give what kRPC 0.6.0's Module.events, fields,
+    trigger_event, get_field and get_field_by_id gave.
+
+    A folder of its own: two SDK projects in one folder would share obj/. Exit code 0 means
+    every check passed. build.cmd runs it before the solution build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.StockTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Stock</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="StockTests.cs" />
+    <Compile Include="ModuleStatesTests.cs" />
+    <Compile Include="..\..\..\src\Plugins\Stock\StagingLocks.cs" />
+    <Compile Include="..\..\..\src\Plugins\Stock\ModuleStates.cs" />
+  </ItemGroup>
+
+</Project>

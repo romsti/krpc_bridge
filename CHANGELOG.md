@@ -4,32 +4,68 @@ All notable changes to KRPC.Bridge. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] — 2026-10-24
+
+The first release since 1.0.0, and a breaking one: **it needs kRPC 0.7.0 and no longer loads on
+kRPC 0.6.x.** kRPC 0.7 changed some of the shapes the bridge reads (SpaceCenter's `Wrench` is now a
+struct, a few text members of `Module` are gone), so the assemblies are built against 0.7.0.
+KSP 1.12.x as before. Of the 1.1.0 that was versioned in August but never released, everything is
+included.
+
+**Upgrading.** Delete the old `GameData/KRPC.Bridge` folder before you unzip this one: the DLLs are
+not the same set (`Control`, `Telemetry`, `Model`, `Stock`, `Ident`, `Tower` are new), and two
+assemblies that declare the same kRPC service make kRPC refuse the duplicate, which takes the whole
+server down. The booster catch tower is no longer inside `KRPC.Bridge`: it is the optional
+`TowerCatch` package (see below).
 
 ### Added
 
-**Actuators v2 — coherent snapshots and atomic control frames**
+**New services** (twelve services and 307 members in all; `available` and `diagnostics` on each, as before)
 
-- `control_snapshot_v2()` captures engines, gimbals and every thrust transform in one
-  timestamped call. It includes topology generation, requested/current/realized engine
-  state, finite engine/gimbal response parameters, asymmetric gimbal limits and complete
-  position+direction geometry per nozzle.
-- `acquire_control()` / `renew_control()` / `release_control()` establish one explicit
-  owner with a short watchdog lease bound to the active vessel and topology generation.
-- `apply_control_frame()` validates all engine and gimbal rows before queuing them, then
-  applies the frame together in `FixedUpdate`; sequences, deadlines and result/ack fields
-  make dropped, stale and superseded commands observable.
-- Legacy per-engine/gimbal leases remain available, but reject writes while a v2 owner is
-  active instead of allowing two controllers to fight silently.
+- `conn.control` — the half that writes: per-engine independent throttle and per-gimbal leases (short,
+  restored automatically), atomic control frames (`acquire_control`, `apply_control_frame`), and
+  **AttitudeV1**, an attitude controller that runs on the physics step. Every option of AttitudeV1 is
+  off until a client switches it on, and a client reads what the build supports first
+  (`attitude_options_v1`, `attitude_capabilities_v1`).
+- `conn.telemetry` — the half that only observes: samples of every engine and gimbal in one call,
+  dynamics frames at the physics rate (V3, Ext, and for tracked vessels that are not active), the aerodynamic
+  actuators and the aerodynamic wrench, the contact of a vessel with the ground by leg (`contact_v1`).
+- `conn.stock` — delta-v simulation and stage table, staging from the frame loop, the aerodynamic
+  force without the launch clamps, landing-leg deployment, the fields and events of part modules in
+  one call.
+- `conn.trajectories` — the Trajectories mod's atmospheric impact prediction, its landing target and
+  its descent profile.
+- `conn.ident` — the identifiers kRPC holds but does not expose (part flightID, vessel persistentId).
+- `conn.discovery` — read-only introspection of the assemblies and types the game has loaded.
+- `conn.tower` and `conn.tower_site` — booster catch towers: put one on the ground from a craft, list
+  and read the towers of a game from the Space Center, ground tests (place and hold a vessel, anchor,
+  hinge probes).
 
-**Actuators — stock KSP engine and gimbal access over `conn.actuators`**
+**`conn.bridge`**
 
-- Bulk engine and gimbal samples in one RPC, including realized thrust and local gimbal
-  actuation in degrees.
-- Per-engine independent-throttle commands use leases capped at one second. The previous
-  KSP fields are restored on expiry, release, scene change or plugin shutdown.
+- `manifest_v1` says which build is loaded: every `KRPC.Bridge*` assembly, its services, the versioned
+  layouts it knows and the commit it was built from.
+- A game clock (`clock_v1`), a vessel registry (`vessels_v1`), bit and layout registries (`bits_v1`,
+  `layout_v1`) and an event bus V2 (`poll_events_v2`: one poll per client tick, every record stamped
+  with the master tick of the game clock, by persistentId).
+- Errors of `conn.control` and `conn.telemetry` start with a code, `"[CODE] text"`: branch on the code.
 
-**Trajectories — a fifth plugin, `conn.trajectories`** (`KRPC.Bridge.Trajectories.dll`)
+**MechJeb** — any module by name (`describe_module`, `setting`, `flag`, `enum_value`, ...), the landing
+predictor, and the maneuver planner (the nodes are ordinary KSP maneuver nodes, read back with stock
+kRPC), where 1.0.0 reached the ascent autopilot only.
+
+**FMRS** — `dropped_stages_v1`, a table that binds each FMRS entry to its staging and separation, and
+`ready_v1`, a readiness probe.
+
+**Build and distribution**
+
+- `build.cmd` runs the tests that need no game, builds, and validates every kRPC signature with
+  kRPC's own scanner. Every DLL carries the commit it was built from, and each package has a
+  `manifest.json` (sha256 of every file, the commit, clean or dirty).
+- `tools/package.py` builds the two release zips, `KRPC.Bridge-x.y.z.zip` and `TowerCatch-x.y.z.zip`.
+- CKAN and KSP-AVC records for both packages (`distribution/`).
+
+**Trajectories — `conn.trajectories`** (`KRPC.Bridge.Trajectories.dll`)
 
 - The mod's atmospheric impact prediction over kRPC: `available()`, `has_impact()`,
   `get_impact_geo()` (latitude, longitude, terrain altitude), `get_impact_position()`
@@ -50,7 +86,23 @@ All notable changes to KRPC.Bridge. Format follows
 - Verified against Trajectories 2.4.5.4 (members read from the installed DLL by
   reflection). Reached by reflection only; the mod is GPL-3.0 and nothing of it is linked.
 
+### Changed
+
+- **The booster catch tower is a package of its own, `TowerCatch`.** Its ModuleManager patch
+  (`Patches/TowerCatch.cfg`) and its craft (`Crafts/Tour Catch v5.craft`) no longer travel inside
+  `GameData/KRPC.Bridge`; the services that place and read a tower stay in `KRPC.Bridge.Tower.dll`.
+  The `TG.*` part names did not change, so a tower already in a save loads as before. Never keep two
+  copies of the patch. `conn.tower_site.tower_package_v1` tells which folder holds it.
+- The tower craft lets its arms open wider, for larger boosters.
+- Documentation (`docs/API.md`) rewritten for all of the above.
+
+### Removed
+
+- Support for kRPC 0.6.x.
+
 ## [1.1.0] — 2026-08-08
+
+Versioned in August but never published as a separate download: everything below is part of 2.0.0.
 
 MechJeb goes from one module to all of them. 1.0.0 could reach `AscentSettings` and
 nothing else, because the by-name settings mechanism was wired to that single type; this

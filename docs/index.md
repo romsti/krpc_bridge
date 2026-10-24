@@ -1,7 +1,9 @@
 # KRPC.Bridge
 
 **kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
-mods that have no scriptable interface at all, made drivable from Python.
+mods that have no scriptable interface at all, made drivable from Python. Version 2 also adds
+services of its own (flight control and telemetry, stock utilities, booster catch towers) and
+**needs kRPC 0.7.0**.
 
 ```python
 import krpc
@@ -32,7 +34,7 @@ The cameras come back on their own.
 - **New here?** The [scripting guide](SCRIPTING.md) walks a complete booster recovery from
   arming to the recovery ledger, then the six things that go wrong.
 
-- **Looking for a member?** The [API reference](API.md) has all 129 procedures by service,
+- **Looking for a member?** The [API reference](API.md) has every procedure (over 300 members in twelve services),
   with units, return shapes and what each one raises. Use the search box.
 
 - **Writing a plugin?** [Architecture](ARCHITECTURE.md) explains the Core, the load order
@@ -74,19 +76,22 @@ what was looked for, and nothing else is affected.
 
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY,
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY,
 MechJeb and Trajectories are each optional.
 
 1. Download the [latest release](https://github.com/romsti/krpc_bridge/releases/latest) and
    unzip it so `GameData/KRPC.Bridge/` lands in your KSP `GameData/`. Keep each `.xml` next
    to its `.dll` — kRPC reads it to build the Python docstrings, so without it
-   `help(conn.fmrs)` is empty.
+   `help(conn.fmrs)` is empty. The booster catch tower's parts are a separate download,
+   `TowerCatch-x.y.z.zip` (`GameData/TowerCatch/`, optional; it needs ModuleManager, Modular Launch
+   Pads, HullCamera VDS and the Breaking Ground and Making History expansions). See the README: never
+   keep a second copy of its patch.
 
 2. Install the kRPC Python client. There is nothing else to install; this mod ships no
    client library of its own.
 
     ```
-    pip install "krpc>=0.6,<0.7"
+    pip install "krpc>=0.7,<0.8"
     ```
 
 3. Start KSP, start the kRPC server, then from any REPL:
@@ -96,9 +101,9 @@ MechJeb and Trajectories are each optional.
     >>> conn = krpc.connect()
     >>> conn.bridge.ping()
     'pong'
-    >>> conn.bridge.available_plugins
-    ['FMRS', 'OCISLY', 'MechJeb', 'Trajectories']
+    >>> conn.bridge.available_plugins    # the plugins whose target resolved
+    [...]
     ```
 
-Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.6.0**,
+Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.7.0**,
 **KSP 1.12.5**.

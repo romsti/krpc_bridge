@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure tests of the hinge lock at rest of conn.tower (hinge_lock_at_rest_v1), with no
+    KSP, no Unity and no kRPC.
+
+        dotnet run -c Release -project build/tests/tower/TowerTests.csproj   (double hyphen)
+
+    It compiles the PURE Tower files directly (System only), exactly as the plugin compiles them:
+      * HingeRestWatch.cs, the watcher that says when to lock: the turning point of a vibration
+        found on the physics step (the sinusoid of a recorded flight armed at every
+        phase of a period, and the arm's own trace of that flight), what IsMoving's moving average
+        would have said at the same steps, the time limit, the order of the tests, a second call
+        within one physics step, a hinge locked by someone else, the final states, the status;
+      * TowerLayoutDeclaration.cs against the REAL Core LayoutRegistry.cs (the descriptor read
+        back through layout_v1's text, no mismatch with the constant that sizes the status);
+      * conn.tower_site (TowerSiteTests.cs): TowerSiteGeometry.cs, the rotation of a tower from
+        latitude, longitude and heading (heading 90 reproduces the rot KSP saved for the two towers
+        Kerbal Konstructs launched, within their 0.0013 deg of tilt), the altitude from the collider
+        footprints over a terrain (flat, sloped, a mound or a cliff under the arms, the clamps' floor,
+        the curvature term, the sampling error bound), the extents and distances, the refusals;
+        TowerSiteFormat.cs, the towers_v1 and tower_status_v1 tables and their layouts;
+      * conn.tower_site.tower_bubble_v1 (TowerBubbleTests.cs): TowerBubbleWatch.cs, the tower
+        loaded first and unpacked once every part has started and its pose stayed still for three
+        physics steps (float32 noise of a tower 3.2 km from the origin under the tolerance, a move
+        over it resets the count, one look per physics step), the unpack after ready, an early unpack
+        said (the case), a repack at a vessel switch, an unload, a loss, the release, the
+        status and its layout;
+      * conn.tower_site.tower_ground_v1 (TowerGroundTests.cs): TowerGroundWatch.cs, which parts of the v5 tower
+        are fixed to the world (KJR's rule at any distance: the root and the two hinges at 20000 as at 80000; the hinge
+        rule with a light motor; never an arm, an inverted or surface-attached hinge, a clamp, a physicsless part), the
+        life of the joints (made at the unpack, made again at a floating origin shift, released at the pack, broken,
+        lost, released on demand), the status, the parts table and both layouts;
+      * the tower package (TowerPackageTests.cs): TowerPackage.cs, the tower's patch and crafts in GameData/TowerCatch
+        and no longer in GameData/KRPC.Bridge: the craft searched in the game's Ships folders, then the package, then
+        the bridge's old folder (the fallback of the transition), a name that leaves its folder refused, and the rows
+        of tower_package_v1 that say where the patch and the craft are (none, the new layout, the old layout, the
+        double that breaks the parts).
+
+    A folder of its own: two SDK projects in one folder would share obj/. Exit code 0 means
+    every check passed. build.cmd runs it before the solution build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>KRPC.Bridge.TowerTests</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Tower</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <BridgeUseStubs>true</BridgeUseStubs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="TowerTests.cs" />
+    <Compile Include="TowerSiteTests.cs" />
+    <Compile Include="TowerBubbleTests.cs" />
+    <Compile Include="TowerGroundTests.cs" />
+    <Compile Include="TowerPackageTests.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\HingeRestWatch.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerLayoutDeclaration.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerSiteGeometry.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerSiteFormat.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerBubbleWatch.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerGroundWatch.cs" />
+    <Compile Include="..\..\..\src\Plugins\Tower\TowerPackage.cs" />
+    <Compile Include="..\..\..\src\Core\LayoutRegistry.cs" />
+  </ItemGroup>
+
+</Project>

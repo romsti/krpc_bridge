@@ -2,27 +2,30 @@ name: build
 
 # What CI can and cannot do here, stated plainly.
 #
-# CAN: type-check every source file against build/stubs, and check that the documented
-#      RPCs and the declared ones still match. That catches typos, wrong overloads,
-#      missing usings and a doc left behind, on every push, for free.
+# CAN: type-check every source file against build/stubs, run the pure tests (AttitudeV1's law
+#      and allocation, the FMRS dropped-stage table, the manifest, Core v2), compile the
+#      signature scanner, unit-test the build tools, and check that the documented RPCs and
+#      the declared ones still match. That catches typos, wrong overloads, missing usings, a
+#      broken law and a doc left behind, on every push, on every branch, for free.
 #
-# CANNOT: validate kRPC service signatures. That needs the real KRPC.Core.dll and the
-#      KSP managed assemblies, and neither may be redistributed - the KSP Add-on Posting
-#      Rules forbid shipping the game's DLLs, and a CI runner has no licensed install.
-#      So the signature scan (build/scan) runs on YOUR machine, from build.cmd, before
-#      you deploy. There is no way around this and it is worth being honest about:
-#      a green tick here does not mean the build is safe to load in game.
+# CANNOT: validate kRPC service signatures, or build the real DLLs. That needs the real
+#      KRPC.Core.dll and the KSP managed assemblies, and neither may be redistributed - the
+#      KSP Add-on Posting Rules forbid shipping the game's DLLs, and a CI runner has no
+#      licensed install. So the signature scan (build/scan) and the manifest run on YOUR
+#      machine, from build.cmd, before you deploy. A green tick here does not mean the build
+#      is safe to load in game.
+#
+# `build.cmd verify` runs the same steps locally, in the same order. Keep the two in step.
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   typecheck:
-    name: type-check C# against stubs
+    name: type-check and pure tests (no KSP)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -31,16 +34,43 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Compile every source file against the stubs
+      - name: 1/5 compile every source file against the stubs
         run: dotnet build build/verify/Verify.csproj -v minimal --nologo
 
-      - name: Compile the signature scanner
+      - name: 2/5 AttitudeV1 maths and reflection-cache tests
+        run: dotnet run --project build/tests/AttitudeTests.csproj -c Release
+
+      - name: 2/5 FMRS dropped-stage table tests
+        run: dotnet run --project build/tests/fmrs/FmrsTests.csproj -c Release
+
+      - name: 2/5 manifest tests (conn.bridge.manifest_v1)
+        run: dotnet run --project build/tests/manifest/ManifestTests.csproj -c Release
+
+      - name: 2/5 Core v2 tests (recorder, lease, clock, bits, frames)
+        run: dotnet run --project build/tests/core/CoreTests.csproj -c Release
+
+      - name: 2/5 Tower hinge lock at rest tests (hinge_lock_at_rest_v1)
+        run: dotnet run --project build/tests/tower/TowerTests.csproj -c Release
+
+      - name: 2/5 ContactV1 latch tests (contact_v1, refactor lot 3)
+        run: dotnet run --project build/tests/contact/ContactTests.csproj -c Release
+
+      - name: 2/5 staging lock tests (stage_in_frame_v2, staging_locks_v1)
+        run: dotnet run --project build/tests/stock/StockTests.csproj -c Release
+
+      - name: golden file written by the AttitudeV1 tests (informational)
+        # Not a failure: the transcendental functions of the Linux runtime may differ from
+        # Windows' in the last bit. The golden file that counts is the one build.cmd writes
+        # on Windows, where the DLLs are built.
+        run: git diff --stat -- build/tests/golden || true
+
+      - name: 3/5 compile the signature scanner
         # Not run - it needs a KSP install - but a scanner that does not compile is
         # a scanner nobody runs.
         run: dotnet build build/scan/Scan.csproj -v minimal --nologo
 
-  docs:
-    name: docs match the code
+  tools:
+    name: build and deploy tools, docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -49,5 +79,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Every documented RPC exists, and every RPC is documented
+      - name: 4/5 unit tests of tools/build_stamp.py, tools/manifest.py, tools/package.py
+        run: python -m unittest discover -s tools -p "test_*.py" -v
+
+      - name: 5/5 every documented RPC exists, and every RPC is documented
         run: python tools/check_docs.py

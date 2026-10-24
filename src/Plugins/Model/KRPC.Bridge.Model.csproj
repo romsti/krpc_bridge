@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    KRPC.Bridge.Model (refactor R3): the PURE model of what flies - the AttitudeV1 law and its
+    bounded WLS allocation (AttitudeMath), the write rules and motifs (AttitudeWrite), the
+    lateral-force maths (AttitudeTranslation), the per-pivot gimbal mapping (GimbalPivots) and
+    the effector registry (EffectorRegistry). System only: no Unity, no KSP, no kRPC type.
+
+    PURE, ENFORCED TWICE:
+      * BridgePure (Directory.Build.targets) gives this project NO Unity and NO kRPC reference,
+        and Assembly-CSharp for the KSPAssembly attribute only (KSP's AssemblyLoader orders
+        Control and Telemetry after it by that attribute): a Unity type does not compile here;
+      * build/tests/AttitudeTests.csproj compiles these sources on net8.0 with no reference at
+        all (and replays the golden vectors the client's mirror checks).
+
+    net472, not netstandard2.0: KSP 1.12's Mono ships no netstandard facade (no netstandard.dll
+    in KSP_x64_Data/Managed nor in MonoBleedingEdge), so a netstandard2.0 assembly would not load
+    in the game. The purity is in the references, not in the target framework.
+
+    No reference to the Core: nothing here depends on its version.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Model</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Model</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+    <BridgePure>true</BridgePure>
+  </PropertyGroup>
+
+</Project>

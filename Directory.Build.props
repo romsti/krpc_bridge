@@ -12,6 +12,11 @@
     <KSPRoot Condition="'$(KSPRoot)'==''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KSPRoot>
     <ManagedPath>$(KSPRoot)\KSP_x64_Data\Managed</ManagedPath>
     <KRPCPath Condition="'$(KRPCPath)'==''">$(KSPRoot)\GameData\kRPC</KRPCPath>
+    <!-- The kRPC we compile against: 0.7 turned some tuples into structs (SpaceCenter.Wrench),
+         so the few sites that read them pick their form with KRPC_07 (Directory.Build.targets,
+         where a stubs build can be told apart). Read from the installed kRPC.version, never
+         guessed. -->
+    <KRPCVersionText Condition="Exists('$(KRPCPath)\kRPC.version')">$([System.IO.File]::ReadAllText('$(KRPCPath)\kRPC.version'))</KRPCVersionText>
 
     <!-- KSP 1.12 is Unity 2019.4 on the .NET 4.x scripting runtime. -->
     <TargetFramework>net472</TargetFramework>

@@ -1,0 +1,1740 @@
+ship = Tour Catch v5
+version = 1.12.5
+description = Booster catch tower (Terminal Guidance). The craft of the TowerCatch package.
+type = VAB
+size = 27.54608,55.3,15.30663
+steamPublishedFileId = 0
+persistentId = 2637070260
+rot = 0,0,0,1
+missionFlag = Squad/Flags/default
+vesselType = Base
+OverrideDefault = False,False,False,False
+OverrideActionControl = 0,0,0,0
+OverrideAxisControl = 0,0,0,0
+OverrideGroupNames = ,,,
+PART
+{
+	part = TG.TowerBase_4292999903
+	partName = Part
+	persistentId = 1385654707
+	pos = 0,0,0
+	attPos = 0,0,0
+	attPos0 = 0,0,0
+	rot = 0,1,0,0
+	attRot = 0,1,0,0
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerCore_4292999806
+	link = TG.TowerClamp_4292997284
+	link = TG.TowerClamp_4292997187
+	link = TG.TowerClamp_4292997090
+	link = TG.TowerClamp_4292996993
+	link = TG.TowerCamBase_4292996605
+	attN = top,TG.TowerCore_4292999806_0|11.3|0_0|-1|0_0|11.3|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = baseSwitch
+		currentSubtype = Off
+	}
+}
+PART
+{
+	part = TG.TowerCore_4292999806
+	partName = Part
+	persistentId = 1255252919
+	pos = 0,10,0
+	attPos = 0,0,0
+	attPos0 = 0,10,0
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerCore_4292999709
+	attN = bottom,TG.TowerBase_4292999903_0|1.3|0_0|1|0_0|1.3|0_0|1|0
+	attN = top,TG.TowerCore_4292999709_0|11.3|0_0|-1|0_0|11.3|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = baseSwitch
+		currentSubtype = Off
+	}
+}
+PART
+{
+	part = TG.TowerCore_4292999709
+	partName = Part
+	persistentId = 2874625376
+	pos = 0,20,0
+	attPos = 0,0,0
+	attPos0 = 0,10,0
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Heaviest
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerCore_4292999612
+	link = spotLight2.v2_4292996314
+	link = spotLight2.v2_4292996217
+	link = flagPartSize3_4292995538
+	link = flagPartSize3_4292995441
+	link = flagPartSize3_4292995344
+	attN = bottom,TG.TowerCore_4292999806_0|1.3|0_0|1|0_0|1.3|0_0|1|0
+	attN = top,TG.TowerCore_4292999612_0|11.3|0_0|-1|0_0|11.3|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = baseSwitch
+		currentSubtype = Off
+	}
+}
+PART
+{
+	part = TG.TowerCore_4292999612
+	partName = Part
+	persistentId = 1733463709
+	pos = 0,30,0
+	attPos = 0,0,0
+	attPos0 = 0,10,0
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Heaviest
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerCore_4292999515
+	link = TG.TowerTruss_4292999321
+	attN = bottom,TG.TowerCore_4292999709_0|1.3|0_0|1|0_0|1.3|0_0|1|0
+	attN = top,TG.TowerCore_4292999515_0|11.3|0_0|-1|0_0|11.3|0_0|-1|0
+	attN = large07,TG.TowerTruss_4292999321_-2.542|7.55|0_-1|0|0_-2.542|7.55|0_-1|0|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = baseSwitch
+		currentSubtype = Off
+	}
+}
+PART
+{
+	part = TG.TowerCore_4292999515
+	partName = Part
+	persistentId = 2323269190
+	pos = 0,40,0
+	attPos = 0,0,0
+	attPos0 = 0,10,0
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Heaviest
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerTop_4292999418
+	link = TG.TowerCamTop_4292996896
+	link = spotLight2.v2_4292996508
+	link = spotLight2.v2_4292996411
+	link = navLight1_4292996120
+	link = navLight1_4292996023
+	link = navLight1_4292995926
+	link = navLight1_4292995829
+	attN = bottom,TG.TowerCore_4292999612_0|1.3|0_0|1|0_0|1.3|0_0|1|0
+	attN = top,TG.TowerTop_4292999418_0|11.3|0_0|-1|0_0|11.3|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = baseSwitch
+		currentSubtype = Off
+	}
+}
+PART
+{
+	part = TG.TowerTop_4292999418
+	partName = Part
+	persistentId = 1032836527
+	pos = 0,51.3,0
+	attPos = 0,0,0
+	attPos0 = 0,11.3,0
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	attN = bottom,TG.TowerCore_4292999515_0|0|0_0|1|0_0|0|0_0|1|0
+}
+PART
+{
+	part = TG.TowerTruss_4292999321
+	partName = Part
+	persistentId = 3411539827
+	pos = 3.796467,37.55,-2.5
+	attPos = 0,0,0
+	attPos0 = -3.796467,7.55,2.5
+	rot = 0.7071068,0,0,0.7071068
+	attRot = 0,-0.7071068,0.7071068,0
+	attRot0 = 0,-0.7071068,0.7071068,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = batteryBankLarge_4292999224
+	link = TG.TowerArm_4292999030
+	link = TG.TowerArm_4292998157
+	attN = med02,TG.TowerCore_4292999612_-1.254467|2.5|0_-1|0|0_-1.254467|2.5|0_-1|0|0
+	attN = med01,batteryBankLarge_4292999224_-1.254467|0|0_-1|0|0_-1.254467|0|0_-1|0|0
+	attN = top,TG.TowerArm_4292999030_0|5|0_0|-1|0_0|5|0_0|-1|0
+	attN = bottom,TG.TowerArm_4292998157_0|0|0_0|1|0_0|0|0_0|1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = sizeSwitch
+		currentSubtype = 5.0m
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+}
+PART
+{
+	part = batteryBankLarge_4292999224
+	partName = Part
+	persistentId = 810018266
+	pos = 2.432,37.55,-2.5
+	attPos = 0,0,0
+	attPos0 = -1.364467,0,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0.5,0.5,-0.5,0.5
+	attRot0 = 0.5,0.5,-0.5,0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = probeCoreOcto.v2_4292999127
+	attN = top,TG.TowerTruss_4292999321_0|0.11|0_0|1|0_0|0.11|0_0|1|0
+	attN = bottom,probeCoreOcto.v2_4292999127_0|-0.142|0_0|-1|0_0|-0.142|0_0|-1|0
+}
+PART
+{
+	part = probeCoreOcto.v2_4292999127
+	partName = Part
+	persistentId = 3977912217
+	pos = 2.102918,37.55,-2.5
+	attPos = 0,0,0
+	attPos0 = 5.551115e-17,-0.3290818,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	attN = top,batteryBankLarge_4292999224_0|0.1870818|0_0|1|0_0|0.1870818|0_0|1|0
+}
+PART
+{
+	part = TG.TowerArm_4292999030
+	partName = Part
+	persistentId = 3363921137
+	pos = 3.796467,37.55,3.75
+	attPos = 0,0,0
+	attPos0 = 0,6.25,1.332268e-15
+	rot = 0.7071068,0,0,0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerHinge_4292998933
+	attN = bottom1,TG.TowerTruss_4292999321_0|-1.25|0_0|1|0_0|-1.25|0_0|1|0
+	attN = top2,TG.TowerHinge_4292998933_0|0|0_0|1|0_0|0|0_0|1|0
+	MODULE
+	{
+		name = ModulePartVariants
+		useVariantMass = True
+		selectedVariant = Short
+	}
+}
+PART
+{
+	part = TG.TowerHinge_4292998933
+	partName = Part
+	persistentId = 1757526601
+	pos = 4.366401,37.55,3.872755
+	attPos = 0,0,0
+	attPos0 = 0.569934,0.122755,2.081668e-17
+	rot = -0.5,0.5,0.5,0.5
+	attRot = -0.7071068,0.7071068,5.551115e-17,5.551115e-17
+	attRot0 = -0.7071068,0.7071068,5.551115e-17,5.551115e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerArm_4292998836
+	attN = bottom,TG.TowerArm_4292999030_0.122755|0.569934|0_1|0|0_0.122755|0.569934|0_1|0|0
+	attN = top,TG.TowerArm_4292998836_-0.526093|-0.122755|0_0|-1|0_-0.526093|-0.122755|0_0|-1|0
+	MODULE
+	{
+		name = ModuleRoboticServoHinge
+		servoIsLocked = True
+		targetAngle = 90
+		softMinMaxAngles = 72.338, 90.907
+	}
+}
+PART
+{
+	part = TG.TowerArm_4292998836
+	partName = Part
+	persistentId = 3598242832
+	pos = 5.739156,37.55,4.398848
+	attPos = 0,0,0
+	attPos0 = -0.526093,-1.372755,0
+	rot = 0,0,-0.7071068,0.7071068
+	attRot = 0.7071068,-5.551115e-17,-0.7071068,5.551115e-17
+	attRot0 = 0.7071068,-5.551115e-17,-0.7071068,5.551115e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerTruss_4292998739
+	attN = bottom2,TG.TowerHinge_4292998933_0|-1.25|0_0|-1|0_0|-1.25|0_0|-1|0
+	attN = top1,TG.TowerTruss_4292998739_0|0|0_0|-1|0_0|0|0_0|-1|0
+	MODULE
+	{
+		name = ModulePartVariants
+		useVariantMass = True
+		selectedVariant = Short
+	}
+}
+PART
+{
+	part = TG.TowerTruss_4292998739
+	partName = Part
+	persistentId = 2382739610
+	pos = 5.739156,37.55,4.398848
+	attPos = 0,0,0
+	attPos0 = 0,0,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,1,0,0
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerTruss_4292998642
+	link = structuralPanel2_4292998545
+	link = structuralPanel2_4292998448
+	link = structuralPanel2_4292998351
+	attN = bottom,TG.TowerArm_4292998836_0|0|0_0|1|0_0|0|0_0|1|0
+	attN = top,TG.TowerTruss_4292998642_0|10|0_0|-1|0_0|10|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = sizeSwitch
+		currentSubtype = 10.0m
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+}
+PART
+{
+	part = TG.TowerTruss_4292998642
+	partName = Part
+	persistentId = 3458383632
+	pos = 15.73916,37.55,4.398848
+	attPos = 0,0,0
+	attPos0 = -1.776357e-15,10,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = structuralPanel2_4292998254
+	link = TG.TowerCamRailN_4292996799
+	link = navLight1_4292995732
+	attN = bottom,TG.TowerTruss_4292998739_0|0|0_0|1|0_0|0|0_0|1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = sizeSwitch
+		currentSubtype = 5.0m
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+}
+PART
+{
+	part = structuralPanel2_4292998545
+	partName = Part
+	persistentId = 1024012025
+	pos = 10,38.85447,4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,4.260844,0.254467
+	rot = 5.551115e-17,-0.7071068,5.551115e-17,0.7071068
+	attRot = 0.7071068,8.326673e-17,2.220446e-16,0.7071068
+	attRot0 = -0.5,-0.5,0.5,-0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998739,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292998448
+	partName = Part
+	persistentId = 910914062
+	pos = 12,38.85447,4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,6.260844,0.254467
+	rot = 5.551115e-17,-0.7071068,5.551115e-17,0.7071068
+	attRot = 0.7071068,8.326673e-17,2.220446e-16,0.7071068
+	attRot0 = -0.5,-0.5,0.5,-0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998739,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292998351
+	partName = Part
+	persistentId = 3291593340
+	pos = 14,38.85447,4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,8.260844,0.254467
+	rot = 5.551115e-17,-0.7071068,5.551115e-17,0.7071068
+	attRot = 0.7071068,8.326673e-17,2.220446e-16,0.7071068
+	attRot0 = -0.5,-0.5,0.5,-0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998739,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292998254
+	partName = Part
+	persistentId = 2125728463
+	pos = 16,38.85447,4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,0.260844,0.254467
+	rot = 5.551115e-17,-0.7071068,5.551115e-17,0.7071068
+	attRot = 0.7071068,8.326673e-17,2.220446e-16,0.7071068
+	attRot0 = -0.5,-0.5,0.5,-0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998642,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = TG.TowerArm_4292998157
+	partName = Part
+	persistentId = 589939963
+	pos = 3.796467,37.55,-3.75
+	attPos = 0,0,0
+	attPos0 = 0,-1.25,-2.220446e-16
+	rot = -0.7071068,0,0,0.7071068
+	attRot = -1,0,0,2.220446e-16
+	attRot0 = -1,0,0,2.220446e-16
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerHinge_4292998060
+	attN = bottom1,TG.TowerTruss_4292999321_0|-1.25|0_0|1|0_0|-1.25|0_0|1|0
+	attN = top2,TG.TowerHinge_4292998060_0|0|0_0|1|0_0|0|0_0|1|0
+	MODULE
+	{
+		name = ModulePartVariants
+		useVariantMass = True
+		selectedVariant = Short
+	}
+}
+PART
+{
+	part = TG.TowerHinge_4292998060
+	partName = Part
+	persistentId = 3309279386
+	pos = 4.366401,37.55,-3.872755
+	attPos = 0,0,0
+	attPos0 = 0.569934,0.122755,-2.081668e-17
+	rot = 0.5,-0.5,0.5,0.5
+	attRot = 0.7071068,-0.7071068,5.551115e-17,5.551115e-17
+	attRot0 = 0.7071068,-0.7071068,5.551115e-17,5.551115e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerArm_4292997963
+	attN = bottom,TG.TowerArm_4292998157_0.122755|0.569934|0_1|0|0_0.122755|0.569934|0_1|0|0
+	attN = top,TG.TowerArm_4292997963_-0.526093|-0.122755|0_0|-1|0_-0.526093|-0.122755|0_0|-1|0
+	MODULE
+	{
+		name = ModuleRoboticServoHinge
+		servoIsLocked = True
+		targetAngle = 90
+		softMinMaxAngles = 72.338, 90.907
+	}
+}
+PART
+{
+	part = TG.TowerArm_4292997963
+	partName = Part
+	persistentId = 610617617
+	pos = 5.739156,37.55,-4.398848
+	attPos = 0,0,0
+	attPos0 = -0.526093,-1.372755,0
+	rot = 0,0,-0.7071068,0.7071068
+	attRot = -0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	attRot0 = -0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerTruss_4292997866
+	attN = bottom2,TG.TowerHinge_4292998060_0|-1.25|0_0|-1|0_0|-1.25|0_0|-1|0
+	attN = top1,TG.TowerTruss_4292997866_0|0|0_0|-1|0_0|0|0_0|-1|0
+	MODULE
+	{
+		name = ModulePartVariants
+		useVariantMass = True
+		selectedVariant = Short
+	}
+}
+PART
+{
+	part = TG.TowerTruss_4292997866
+	partName = Part
+	persistentId = 1414657471
+	pos = 5.739156,37.55,-4.398848
+	attPos = 0,0,0
+	attPos0 = 0,0,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,1,0,0
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = TG.TowerTruss_4292997769
+	link = structuralPanel2_4292997672
+	link = structuralPanel2_4292997575
+	link = structuralPanel2_4292997478
+	attN = bottom,TG.TowerArm_4292997963_0|0|0_0|1|0_0|0|0_0|1|0
+	attN = top,TG.TowerTruss_4292997769_0|10|0_0|-1|0_0|10|0_0|-1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = sizeSwitch
+		currentSubtype = 10.0m
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+}
+PART
+{
+	part = TG.TowerTruss_4292997769
+	partName = Part
+	persistentId = 830570509
+	pos = 15.73916,37.55,-4.398848
+	attPos = 0,0,0
+	attPos0 = -1.776357e-15,10,0
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = structuralPanel2_4292997381
+	link = TG.TowerCamRailS_4292996702
+	link = navLight1_4292995635
+	attN = bottom,TG.TowerTruss_4292997866_0|0|0_0|1|0_0|0|0_0|1|0
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = sizeSwitch
+		currentSubtype = 5.0m
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = textureSwitch
+		currentSubtype = Dark Gray
+	}
+	MODULE
+	{
+		name = ModuleB9PartSwitch
+		moduleID = panelSwitch
+		currentSubtype = All Off
+	}
+}
+PART
+{
+	part = structuralPanel2_4292997672
+	partName = Part
+	persistentId = 3621411374
+	pos = 10,38.85447,-4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,4.260844,-0.254467
+	rot = 0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	attRot = 0.7071068,0,1.94289e-16,0.7071068
+	attRot0 = 0.5,-0.5,0.5,0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997866,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292997575
+	partName = Part
+	persistentId = 350827535
+	pos = 12,38.85447,-4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,6.260844,-0.254467
+	rot = 0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	attRot = 0.7071068,0,1.94289e-16,0.7071068
+	attRot0 = 0.5,-0.5,0.5,0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997866,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292997478
+	partName = Part
+	persistentId = 956645466
+	pos = 14,38.85447,-4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,8.260844,-0.254467
+	rot = 0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	attRot = 0.7071068,0,1.94289e-16,0.7071068
+	attRot0 = 0.5,-0.5,0.5,0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997866,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = structuralPanel2_4292997381
+	partName = Part
+	persistentId = 1686774860
+	pos = 16,38.85447,-4.144381
+	attPos = 0,0,0
+	attPos0 = 1.304467,0.260844,-0.254467
+	rot = 0.7071068,5.551115e-17,-0.7071068,5.551115e-17
+	attRot = 0.7071068,0,1.94289e-16,0.7071068
+	attRot0 = 0.5,-0.5,0.5,0.5
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997769,,-1|0|0,-1|0|0,-1|0|0
+}
+PART
+{
+	part = TG.TowerClamp_4292997284
+	partName = Part
+	persistentId = 537139635
+	pos = -3.306919,1.35,1.2
+	attPos = 0,0,0
+	attPos0 = 3.306919,1.35,-1.2
+	rot = 0,0.7071068,0,0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.7071068,0,0.7071068
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerBase_4292999903,,0|1.354437|0.8069194,0|0|-1,0|1.354437|0.8069194
+}
+PART
+{
+	part = TG.TowerClamp_4292997187
+	partName = Part
+	persistentId = 3184681450
+	pos = -3.306919,1.35,-1.2
+	attPos = 0,0,0
+	attPos0 = 3.306919,1.35,1.2
+	rot = 0,0.7071068,0,0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.7071068,0,0.7071068
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerBase_4292999903,,0|1.354437|0.8069194,0|0|-1,0|1.354437|0.8069194
+}
+PART
+{
+	part = TG.TowerClamp_4292997090
+	partName = Part
+	persistentId = 367728419
+	pos = 0,1.35,3.306919
+	attPos = 0,0,0
+	attPos0 = 0,1.35,-3.306919
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerBase_4292999903,,0|1.354437|0.8069194,0|0|-1,0|1.354437|0.8069194
+}
+PART
+{
+	part = TG.TowerClamp_4292996993
+	partName = Part
+	persistentId = 2491051093
+	pos = 0,1.35,-3.306919
+	attPos = 0,0,0
+	attPos0 = 0,1.35,3.306919
+	rot = 0,0,0,-1
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerBase_4292999903,,0|1.354437|0.8069194,0|0|-1,0|1.354437|0.8069194
+}
+PART
+{
+	part = TG.TowerCamTop_4292996896
+	partName = Part
+	persistentId = 246036368
+	pos = 2.595867,49.99089,0
+	attPos = 0,0,0
+	attPos0 = -2.595867,9.990894,0
+	rot = -0.6911223,0.1494992,0.6911223,0.1494992
+	attRot = -0.8406215,1.665335e-16,8.326673e-17,-0.5416231
+	attRot0 = -0.6911223,-0.1494992,-0.6911223,0.1494992
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|-0.01|0,0|-1|0,0|-0.01|0
+}
+PART
+{
+	part = TG.TowerCamRailN_4292996799
+	partName = Part
+	persistentId = 3444415848
+	pos = 19.73571,38.89535,4.396601
+	attPos = 0,0,0
+	attPos0 = 1.345351,3.996558,0.002246896
+	rot = 0.4654921,-0.1848746,0.85972,0.1000996
+	attRot = -0.9370665,0.05994494,-0.2787613,-0.2015072
+	attRot0 = -0.678695,0.5371327,0.4598787,0.1984265
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998642,,0|-0.01|0,0|-1|0,0|-0.01|0
+}
+PART
+{
+	part = TG.TowerCamRailS_4292996702
+	partName = Part
+	persistentId = 1219940034
+	pos = 19.73571,38.89535,-4.396601
+	attPos = 0,0,0
+	attPos0 = 1.345351,3.996558,-0.002246896
+	rot = -0.85972,0.1000996,-0.4654921,-0.1848746
+	attRot = 0.9370665,0.05994494,-0.2787613,0.2015072
+	attRot0 = 0.4598787,-0.1984265,-0.678695,-0.5371327
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997769,,0|-0.01|0,0|-1|0,0|-0.01|0
+}
+PART
+{
+	part = TG.TowerCamBase_4292996605
+	partName = Part
+	persistentId = 627813936
+	pos = 2.603735,5.990724,6.505213e-19
+	attPos = 0,0,0
+	attPos0 = -2.603735,5.990724,-6.505213e-19
+	rot = -0.6941986,-0.1344928,0.6941986,-0.1344928
+	attRot = -0.5597058,5.551115e-17,4.163336e-17,-0.8286914
+	attRot0 = -0.6941986,0.1344928,-0.6941986,-0.1344928
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerBase_4292999903,,0|-0.01|0,0|-1|0,0|-0.01|0
+}
+PART
+{
+	part = spotLight2.v2_4292996508
+	partName = Part
+	persistentId = 3488949286
+	pos = 2.788404,46.7823,-1.759131
+	attPos = 0,0,0
+	attPos0 = -2.788404,6.782304,1.759131
+	rot = -0.1847398,-0.7324447,-0.2191043,0.6175673
+	attRot = 0.2855609,0.0812306,0.02429942,-0.9546026
+	attRot0 = 0.2191043,-0.6175673,-0.1847398,-0.7324447
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|-0.03070444|0.2692509,0|0|-1,0|-0.03070444|0.2692509
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0.93
+		lightB = 0.8
+		isBlinking = False
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = spotLight2.v2_4292996411
+	partName = Part
+	persistentId = 2975065653
+	pos = 2.788404,46.7823,1.759131
+	attPos = 0,0,0
+	attPos0 = -2.788404,6.782304,-1.759131
+	rot = -0.2191043,-0.6175673,-0.1847398,0.7324447
+	attRot = 0.2855609,-0.0812306,-0.02429942,-0.9546026
+	attRot0 = 0.1847398,-0.7324447,-0.2191043,-0.6175673
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|-0.03070444|0.2692509,0|0|-1,0|-0.03070444|0.2692509
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0.93
+		lightB = 0.8
+		isBlinking = False
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = spotLight2.v2_4292996314
+	partName = Part
+	persistentId = 3576652180
+	pos = 2.816407,26.885,-1.75433
+	attPos = 0,0,0
+	attPos0 = -2.816407,6.884997,1.75433
+	rot = -0.05972646,-0.7612254,-0.07083654,0.641834
+	attRot = 0.09232199,0.08442248,0.007856013,-0.9921128
+	attRot0 = 0.07083654,-0.641834,-0.05972646,-0.7612254
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999709,,0|-0.03070444|0.2692509,0|0|-1,0|-0.03070444|0.2692509
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0.93
+		lightB = 0.8
+		isBlinking = False
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = spotLight2.v2_4292996217
+	partName = Part
+	persistentId = 1465757264
+	pos = 2.816407,26.885,1.75433
+	attPos = 0,0,0
+	attPos0 = -2.816407,6.884997,-1.75433
+	rot = -0.07083654,-0.641834,-0.05972646,0.7612254
+	attRot = 0.09232199,-0.08442248,-0.007856013,-0.9921128
+	attRot0 = 0.05972646,-0.7612254,-0.07083654,-0.641834
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999709,,0|-0.03070444|0.2692509,0|0|-1,0|-0.03070444|0.2692509
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0.93
+		lightB = 0.8
+		isBlinking = False
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292996120
+	partName = Part
+	persistentId = 1031354865
+	pos = 2.5,50.8,1.2
+	attPos = 0,0,0
+	attPos0 = -2.5,10.8,-1.2
+	rot = 0,0.7071068,0,-0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,0.7071068,0,0.7071068
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292996023
+	partName = Part
+	persistentId = 2547115330
+	pos = -2.5,50.8,0
+	attPos = 0,0,0
+	attPos0 = 2.5,10.8,0
+	rot = 0,0.7071068,0,0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.7071068,0,0.7071068
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292995926
+	partName = Part
+	persistentId = 736382520
+	pos = 0,50.8,2.5
+	attPos = 0,0,0
+	attPos0 = 0,10.8,-2.5
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292995829
+	partName = Part
+	persistentId = 499749461
+	pos = 0,50.8,-2.5
+	attPos = 0,0,0
+	attPos0 = 0,10.8,2.5
+	rot = 0,0,0,-1
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999515,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292995732
+	partName = Part
+	persistentId = 2220641180
+	pos = 20.23916,37.55,5.653315
+	attPos = 0,0,0
+	attPos0 = -4.440892e-16,4.5,-1.254467
+	rot = 0.7071068,0.7071068,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292998642,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = navLight1_4292995635
+	partName = Part
+	persistentId = 3972243481
+	pos = 20.23916,37.55,-5.653315
+	attPos = 0,0,0
+	attPos0 = -4.440892e-16,4.5,1.254467
+	rot = 0,0,0.7071068,-0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerTruss_4292997769,,0|0|0,0|0|-1,0|0|0
+	MODULE
+	{
+		name = ModuleLight
+		isOn = True
+		lightR = 1
+		lightG = 0
+		lightB = 0
+		isBlinking = True
+		blinkRate = 1
+	}
+}
+PART
+{
+	part = flagPartSize3_4292995538
+	partName = Part
+	persistentId = 198808023
+	pos = -2.566,25.65,1.387779e-17
+	attPos = 0,0,0
+	attPos0 = 2.566,5.65,-1.387779e-17
+	rot = 0,0.7071068,0,0.7071068
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.7071068,0,0.7071068
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999709,,0|0|0.066,0|0|-1,0|0|0.066
+}
+PART
+{
+	part = flagPartSize3_4292995441
+	partName = Part
+	persistentId = 2073191361
+	pos = 0,25.65,2.566
+	attPos = 0,0,0
+	attPos0 = 0,5.65,-2.566
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999709,,0|0|0.066,0|0|-1,0|0|0.066
+}
+PART
+{
+	part = flagPartSize3_4292995344
+	partName = Part
+	persistentId = 2492325713
+	pos = 0,25.65,-2.566
+	attPos = 0,0,0
+	attPos0 = 0,5.65,2.566
+	rot = 0,0,0,-1
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = True
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,TG.TowerCore_4292999709,,0|0|0.066,0|0|-1,0|0|0.066
+}

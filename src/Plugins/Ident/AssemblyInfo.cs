@@ -9,7 +9,7 @@ using System.Reflection;
 //
 // Check it landed:
 //     findstr /C:"KRPC.Bridge" "<KSP>\KSP.log"
-[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 0)]
+[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 3)]
 
 // No KSPAssemblyDependency on KRPC.SpaceCenter: it is not a KSPAssembly, it is a kRPC
 // service assembly, and kRPC's own loader handles it. The compile-time <Reference> in the
@@ -17,5 +17,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Ident")]
 [assembly: AssemblyDescription ("KSP identifiers that kRPC holds internally but does not publish: part flightID, vessel persistentId and Guid.")]
-[assembly: AssemblyVersion ("1.1.0.0")]
-[assembly: AssemblyFileVersion ("1.1.0.0")]
+[assembly: AssemblyVersion ("2.0.0.0")]
+[assembly: AssemblyFileVersion ("2.0.0.0")]

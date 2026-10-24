@@ -44,10 +44,29 @@ namespace KRPC.Bridge.Core
     /// Add hooks in <see cref="Subscribe"/>. Keep the handlers trivial: they run inside
     /// KSP's own event dispatch, and an exception thrown there can take out unrelated
     /// mods listening on the same event.
+    ///
+    /// VERSION 2 (refactor lot 3, line 3.3; audit C, R6). A second ring, <see cref="EventLogV2"/>,
+    /// read by conn.bridge.poll_events_v2 in ONE call per client tick: every record carries the
+    /// master tick of the game clock (<see cref="GameClock.Tick"/>, the last physics step opened
+    /// when the event fired) and the UT, and names its vessels and part by persistentId. It
+    /// receives every record of the first log (same kinds, same detail, plus the identities the
+    /// v1 row never had) and the events of R6 that the first log never had: decoupling with both
+    /// vessels, joint breaks with the force, part count changes, physics easing, rails, warp,
+    /// loading, and the contact transitions KRPC.Bridge.Telemetry publishes. The first log, its
+    /// rows, its ids and its signals are unchanged byte for byte: poll_events and on_event see
+    /// exactly what they saw. The V2-only kinds fire no signal.
+    ///
+    /// (06/10, it killed the Core in game): GameEvents' EventData.Add dereferences the
+    /// delegate's Target, so a delegate to a STATIC method throws there. Every hook below is a
+    /// lambda (compiled onto the closure singleton: a Target), each in its own try/catch, and the
+    /// V2 hooks are kept in fields so <see cref="UnsubscribeV2"/> removes exactly what was added.
     /// </summary>
     public static class EventBus
     {
         const int Capacity = 512;
+
+        // The V2 ring (protocol and schema: EventLogV2.Protocol, EventLogV2.Schema).
+        static readonly EventLogV2 logV2 = new EventLogV2 ();
 
         /// <summary>Most event signals that may be live at once. See <see cref="Signal"/>.</summary>
         const int MaxSignals = 64;
@@ -126,11 +145,63 @@ namespace KRPC.Bridge.Core
         }
 
         /// <summary>
+        /// Records one event into the V2 ring only (no row in the first log, no signal), stamped
+        /// with the UT now. A plugin publishes its own V2 events here (KRPC.Bridge.Telemetry: the
+        /// contact transitions). <paramref name="tick"/> is the master tick the event belongs to
+        /// (a plugin running inside a physics step passes <see cref="GameClock.StepTick"/>); a
+        /// negative value takes <see cref="GameClock.Tick"/>. Returns the sequence number, 0 when
+        /// nothing could be recorded. Never throws.
+        /// </summary>
+        /// <param name="kind">Event kind, e.g. "contact.first". Prefix a plugin's own kinds with its domain.</param>
+        /// <param name="tick">Master tick of the event, or -1 for the current one.</param>
+        /// <param name="vesselPid">persistentId of the vessel it concerns, 0 when none.</param>
+        /// <param name="otherPid">A second persistentId the kind names (documented per kind), 0 when none.</param>
+        /// <param name="partPid">persistentId of the part it concerns, 0 when none.</param>
+        /// <param name="value">A number the kind documents (SI), NaN when none.</param>
+        /// <param name="detail">Free text, never parsed by the bridge.</param>
+        public static long RecordV2 (string kind, long tick, uint vesselPid, uint otherPid, uint partPid,
+            double value, string detail)
+        {
+            try {
+                var ut = UniversalTime ();
+                if (tick < 0)
+                    tick = GameClock.Tick;
+                lock (gate)
+                    return logV2.Append (kind, tick, ut, vesselPid, string.Empty, otherPid, partPid, value, detail);
+            } catch (Exception) {
+                return 0;
+            }
+        }
+
+        /// <summary>poll_events_v2's text table (<see cref="EventLogV2.Lines"/>), at the current tick and UT.</summary>
+        public static List<string> PollV2 (long sinceSeq, int maxRows)
+        {
+            var ut = UniversalTime ();
+            lock (gate)
+                return logV2.Lines (sinceSeq, maxRows, GameClock.Tick, ut);
+        }
+
+        /// <summary>The highest V2 sequence number given this session (0 before the first record).</summary>
+        public static long LastSeqV2 {
+            get { lock (gate) return logV2.LastSeq; }
+        }
+
+        /// <summary>
         /// Record an event. Plugins may call this to publish their own, so a plugin that
         /// wraps a mod exposing C# events can surface them on the same channel
         /// (StageRecovery's RecoveryProcessingComplete, for instance).
         /// </summary>
         public static void Record (string kind, string vesselId = "", string detail = "")
+        {
+            RecordBoth (kind, vesselId, detail, 0u, 0u, 0u, double.NaN);
+        }
+
+        /// <summary>
+        /// One record of the first log (exactly what <see cref="Record"/> always wrote, signals
+        /// included) and its copy in the V2 ring, with the identities the v1 row has no column for.
+        /// </summary>
+        static void RecordBoth (string kind, string vesselId, string detail, uint vesselPid, uint otherPid,
+            uint partPid, double value)
         {
             var name = kind ?? "unknown";
 
@@ -154,6 +225,8 @@ namespace KRPC.Bridge.Core
                     VesselId = vesselId ?? string.Empty,
                     Detail = detail ?? string.Empty
                 });
+                // Version 2: the same record, stamped with the master tick and the persistentIds.
+                logV2.Append (name, GameClock.Tick, ut, vesselPid, vesselId, otherPid, partPid, value, detail);
 
                 foreach (var subscription in subscriptions)
                     if (ModRegistry.MatchesFilter (name, subscription.Filter))
@@ -218,43 +291,180 @@ namespace KRPC.Bridge.Core
             // Each hook is guarded on its own. GameEvents members do move between KSP
             // versions, and losing one hook must cost you that one event, not the bus.
 
+            // The first log's hooks: the same v1 row as always (kind, Guid, detail), and in the V2
+            // ring the persistentIds and a number the v1 row has no column for.
             Hook ("vessel.destroy", () => GameEvents.onVesselDestroy.Add (v =>
-                Record ("vessel.destroy", Id (v), v != null ? v.vesselName : "")));
+                RecordBoth ("vessel.destroy", Id (v), v != null ? v.vesselName : "", Pid (v), 0u, 0u, double.NaN)));
 
             Hook ("vessel.change", () => GameEvents.onVesselChange.Add (v =>
-                Record ("vessel.change", Id (v), v != null ? v.vesselName : "")));
+                RecordBoth ("vessel.change", Id (v), v != null ? v.vesselName : "", Pid (v), 0u, 0u, double.NaN)));
 
             Hook ("vessel.recovered", () => GameEvents.onVesselRecovered.Add ((pv, _) =>
-                Record ("vessel.recovered",
+                RecordBoth ("vessel.recovered",
                         pv != null ? pv.vesselID.ToString () : "",
-                        pv != null ? pv.vesselName : "")));
+                        pv != null ? pv.vesselName : "",
+                        pv != null ? pv.persistentId : 0u, 0u, 0u, double.NaN)));
 
             Hook ("vessel.situation", () => GameEvents.onVesselSituationChange.Add (data =>
-                Record ("vessel.situation", Id (data.host), data.from + " -> " + data.to)));
+                RecordBoth ("vessel.situation", Id (data.host), data.from + " -> " + data.to,
+                        Pid (data.host), 0u, 0u, (int)data.to)));
 
             Hook ("vessel.soi", () => GameEvents.onVesselSOIChanged.Add (data =>
-                Record ("vessel.soi", Id (data.host),
+                RecordBoth ("vessel.soi", Id (data.host),
                         (data.from != null ? data.from.bodyName : "?") + " -> " +
-                        (data.to != null ? data.to.bodyName : "?"))));
+                        (data.to != null ? data.to.bodyName : "?"), Pid (data.host), 0u, 0u, double.NaN)));
 
             Hook ("stage.activate", () => GameEvents.onStageActivate.Add (stage =>
-                Record ("stage.activate", ActiveId (), stage.ToString ())));
+                RecordBoth ("stage.activate", ActiveId (), stage.ToString (), Pid (FlightGlobals.ActiveVessel),
+                        0u, 0u, stage)));
 
             Hook ("part.die", () => GameEvents.onPartDie.Add (p =>
-                Record ("part.die",
+                RecordBoth ("part.die",
                         p != null && p.vessel != null ? Id (p.vessel) : "",
-                        p != null && p.partInfo != null ? p.partInfo.name : "")));
+                        p != null && p.partInfo != null ? p.partInfo.name : "",
+                        p != null ? Pid (p.vessel) : 0u, 0u, p != null ? p.persistentId : 0u, double.NaN)));
 
             Hook ("part.crash", () => GameEvents.onCrash.Add (report =>
-                Record ("part.crash", OriginVesselId (report), OriginPartName (report))));
+                RecordBoth ("part.crash", OriginVesselId (report), OriginPartName (report),
+                        OriginVesselPid (report), 0u, OriginPartPid (report), double.NaN)));
 
             Hook ("part.splashdown", () => GameEvents.onCrashSplashdown.Add (report =>
-                Record ("part.splashdown", OriginVesselId (report), OriginPartName (report))));
+                RecordBoth ("part.splashdown", OriginVesselId (report), OriginPartName (report),
+                        OriginVesselPid (report), 0u, OriginPartPid (report), double.NaN)));
 
             Hook ("scene.load", () => GameEvents.onGameSceneLoadRequested.Add (scene =>
-                Record ("scene.load", "", scene.ToString ())));
+                RecordBoth ("scene.load", "", scene.ToString (), 0u, 0u, 0u, (int)scene)));
 
             BridgeLog.Info ("event bus subscribed");
+
+            SubscribeV2 ();
+        }
+
+        // The V2-only hooks, kept so UnsubscribeV2 removes exactly them (EventData.Remove matches
+        // the delegate). Lambdas, never method groups.
+        static EventData<Vessel, Vessel>.OnEvent onDecouple;
+        static EventData<Vessel, Vessel>.OnEvent onUndock;
+        static EventData<PartJoint, float>.OnEvent onJointBreak;
+        static EventData<Vessel>.OnEvent onPartCount;
+        static EventData<Vessel>.OnEvent onEaseStart;
+        static EventData<Vessel>.OnEvent onEaseStop;
+        static EventData<Vessel>.OnEvent onOffRails;
+        static EventData<Vessel>.OnEvent onOnRails;
+        static EventData<Vessel>.OnEvent onCreate;
+        static EventData<Vessel>.OnEvent onLoaded;
+        static EventData<Vessel>.OnEvent onUnloaded;
+        static EventVoid.OnEvent onWarp;
+        static bool subscribedV2;
+
+        /// <summary>
+        /// The events of R6 that the first log never had, into the V2 ring only (no v1 row, no
+        /// signal). Members (KSP 1.12.5, installed Assembly-CSharp, decompiled
+        /// GameEvents): onPartDeCoupleNewVesselComplete EventData&lt;Vessel, Vessel&gt; (old, new),
+        /// onVesselsUndocking EventData&lt;Vessel, Vessel&gt;, onPartJointBreak
+        /// EventData&lt;PartJoint, float&gt; (fired by PartJoint.OnJointBreak with Unity's break
+        /// force), onVesselPartCountChanged, onPhysicsEaseStart, onPhysicsEaseStop,
+        /// onVesselGoOffRails, onVesselGoOnRails, onVesselCreate, onVesselLoaded, onVesselUnloaded
+        /// EventData&lt;Vessel&gt;, onTimeWarpRateChanged EventVoid. Each hook on its own: a
+        /// moved member costs that one event.
+        /// </summary>
+        static void SubscribeV2 ()
+        {
+            if (subscribedV2)
+                return;
+            subscribedV2 = true;
+            // (old vessel, new vessel) at the end of Part.decouple: THE event that binds a separated
+            // booster's persistentId to its tick (double flights, ascent).
+            onDecouple = (a, b) => V2 ("vessel.decouple", a, Pid (b), 0u, double.NaN, b != null ? b.vesselName : "");
+            Hook ("vessel.decouple", () => GameEvents.onPartDeCoupleNewVesselComplete.Add (onDecouple));
+            onUndock = (a, b) => V2 ("vessel.undock", a, Pid (b), 0u, double.NaN, b != null ? b.vesselName : "");
+            Hook ("vessel.undock", () => GameEvents.onVesselsUndocking.Add (onUndock));
+            // Unity's break force is in KSP's force unit, kN (masses in tonnes): published in N.
+            onJointBreak = (joint, force) => JointBreak (joint, force);
+            Hook ("part.joint_break", () => GameEvents.onPartJointBreak.Add (onJointBreak));
+            onPartCount = v => V2 ("vessel.part_count", v, 0u, 0u,
+                v != null && v.parts != null ? v.parts.Count : double.NaN, "");
+            Hook ("vessel.part_count", () => GameEvents.onVesselPartCountChanged.Add (onPartCount));
+            // StartEasing (unpacking): KSP ramps gravity from 0 and LOCKS the active vessel's
+            // commands; nothing written to a vessel between ease_start and ease_stop is applied.
+            onEaseStart = v => V2 ("vessel.ease_start", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.ease_start", () => GameEvents.onPhysicsEaseStart.Add (onEaseStart));
+            onEaseStop = v => V2 ("vessel.ease_stop", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.ease_stop", () => GameEvents.onPhysicsEaseStop.Add (onEaseStop));
+            onOffRails = v => V2 ("vessel.off_rails", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.off_rails", () => GameEvents.onVesselGoOffRails.Add (onOffRails));
+            onOnRails = v => V2 ("vessel.on_rails", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.on_rails", () => GameEvents.onVesselGoOnRails.Add (onOnRails));
+            onCreate = v => V2 ("vessel.create", v, 0u, 0u, double.NaN, v != null ? v.vesselName : "");
+            Hook ("vessel.create", () => GameEvents.onVesselCreate.Add (onCreate));
+            onLoaded = v => V2 ("vessel.load", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.load", () => GameEvents.onVesselLoaded.Add (onLoaded));
+            onUnloaded = v => V2 ("vessel.unload", v, 0u, 0u, double.NaN, "");
+            Hook ("vessel.unload", () => GameEvents.onVesselUnloaded.Add (onUnloaded));
+            onWarp = () => V2 ("warp.rate", FlightGlobals.ActiveVessel, 0u, 0u, TimeWarp.CurrentRate, "");
+            Hook ("warp.rate", () => GameEvents.onTimeWarpRateChanged.Add (onWarp));
+            BridgeLog.Info ("event bus v2 subscribed");
+        }
+
+        /// <summary>
+        /// Removes the V2-only hooks (BridgeCore.OnDestroy: the Core persists across scenes, so this
+        /// runs when the game quits). Each removal on its own. The first log's hooks stay for the
+        /// session, as they always did.
+        /// </summary>
+        internal static void UnsubscribeV2 ()
+        {
+            if (!subscribedV2)
+                return;
+            subscribedV2 = false;
+            Unhook ("vessel.decouple", () => GameEvents.onPartDeCoupleNewVesselComplete.Remove (onDecouple));
+            Unhook ("vessel.undock", () => GameEvents.onVesselsUndocking.Remove (onUndock));
+            Unhook ("part.joint_break", () => GameEvents.onPartJointBreak.Remove (onJointBreak));
+            Unhook ("vessel.part_count", () => GameEvents.onVesselPartCountChanged.Remove (onPartCount));
+            Unhook ("vessel.ease_start", () => GameEvents.onPhysicsEaseStart.Remove (onEaseStart));
+            Unhook ("vessel.ease_stop", () => GameEvents.onPhysicsEaseStop.Remove (onEaseStop));
+            Unhook ("vessel.off_rails", () => GameEvents.onVesselGoOffRails.Remove (onOffRails));
+            Unhook ("vessel.on_rails", () => GameEvents.onVesselGoOnRails.Remove (onOnRails));
+            Unhook ("vessel.create", () => GameEvents.onVesselCreate.Remove (onCreate));
+            Unhook ("vessel.load", () => GameEvents.onVesselLoaded.Remove (onLoaded));
+            Unhook ("vessel.unload", () => GameEvents.onVesselUnloaded.Remove (onUnloaded));
+            Unhook ("warp.rate", () => GameEvents.onTimeWarpRateChanged.Remove (onWarp));
+            BridgeLog.Info ("event bus v2 unsubscribed");
+        }
+
+        /// <summary>One V2-only record from a hook. Never throws into KSP's dispatch.</summary>
+        static void V2 (string kind, Vessel vessel, uint otherPid, uint partPid, double value, string detail)
+        {
+            try {
+                RecordV2 (kind, -1, Pid (vessel), otherPid, partPid, value, detail);
+            } catch (Exception) {
+            }
+        }
+
+        /// <summary>
+        /// part.joint_break: the vessel and the part of the child side (PartJoint.Child, else the
+        /// host's vessel), the parent PART's persistentId as other_pid, the force in N.
+        /// </summary>
+        static void JointBreak (PartJoint joint, float breakForce)
+        {
+            try {
+                Part child = joint != null ? joint.Child : null;
+                Part parent = joint != null ? joint.Parent : null;
+                Part host = joint != null ? joint.Host : null;
+                Vessel vessel = child != null && child.vessel != null ? child.vessel
+                    : (host != null ? host.vessel : null);
+                string detail = child != null && child.partInfo != null ? child.partInfo.name : "";
+                RecordV2 ("part.joint_break", -1, Pid (vessel), parent != null ? parent.persistentId : 0u,
+                    child != null ? child.persistentId : 0u, breakForce * Frames.KilonewtonToNewton, detail);
+            } catch (Exception) {
+            }
+        }
+
+        static void Unhook (string name, Action unsubscribe)
+        {
+            try {
+                unsubscribe ();
+            } catch (Exception e) {
+                BridgeLog.Warn ("event bus could not unhook " + name + ": " + e.Message);
+            }
         }
 
         static void Hook (string name, Action subscribe)
@@ -276,6 +486,22 @@ namespace KRPC.Bridge.Core
         {
             return report != null && report.origin != null && report.origin.partInfo != null
                 ? report.origin.partInfo.name : string.Empty;
+        }
+
+        static uint Pid (Vessel v)
+        {
+            return v == null ? 0u : v.persistentId;
+        }
+
+        static uint OriginVesselPid (EventReport report)
+        {
+            return report != null && report.origin != null && report.origin.vessel != null
+                ? report.origin.vessel.persistentId : 0u;
+        }
+
+        static uint OriginPartPid (EventReport report)
+        {
+            return report != null && report.origin != null ? report.origin.persistentId : 0u;
         }
 
         static string Id (Vessel v)

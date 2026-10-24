@@ -13,9 +13,9 @@ using System.Reflection;
 //     the graceful degradation, and it is free.
 // ---------------------------------------------------------------------------------
 [assembly: KSPAssembly ("KRPC.Bridge.Ocisly", 1, 0)]
-[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 0)]
+[assembly: KSPAssemblyDependency ("KRPC.Bridge.Core", 1, 3)]
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Ocisly")]
 [assembly: AssemblyDescription ("kRPC service for OfCourseIStillLoveYou: re-open and re-arm Hullcam camera streams after a scene reload.")]
-[assembly: AssemblyVersion ("1.1.0.0")]
-[assembly: AssemblyFileVersion ("1.1.0.0")]
+[assembly: AssemblyVersion ("2.0.0.0")]
+[assembly: AssemblyFileVersion ("2.0.0.0")]

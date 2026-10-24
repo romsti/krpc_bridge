@@ -129,6 +129,45 @@ namespace KRPC.Bridge.Trajectories
         }
 
         // ------------------------------------------------------------------
+        // State per vessel (refactor R3)
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// The persistentId (decimal string) of the vessel the predictions are computed for:
+        /// the ACTIVE vessel, the only one Trajectories follows; empty without one. A process
+        /// that guides another vessel (the non-active booster of a double flight) reads it to
+        /// know that the prediction is not its own. Never throws.
+        /// </summary>
+        [KRPCProcedure]
+        public static string VesselIdV1 ()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            return vessel == null ? string.Empty
+                : vessel.persistentId.ToString (System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// GetImpactGeo for the vessel the caller names: [latitude deg, longitude deg, terrain
+        /// altitude m] when persistentId (decimal string) is the vessel Trajectories computes for
+        /// and it has an impact, an EMPTY list when it has none. Refused with [UNSUPPORTED_MODE]
+        /// for any other vessel: Trajectories predicts for the active vessel only, and this
+        /// procedure never answers with another vessel's impact.
+        /// </summary>
+        [KRPCProcedure]
+        public static IList<double> ImpactGeoForV1 (string persistentId)
+        {
+            uint pid = VesselRegistry.ParsePersistentId (persistentId);
+            var active = FlightGlobals.ActiveVessel;
+            if (active == null || active.persistentId != pid)
+                throw new InvalidOperationException (BridgeErrors.Tag (BridgeErrors.UnsupportedMode,
+                    "Trajectories predicts for the active vessel only; vessel " + persistentId +
+                    " is not it"));
+            if (!HasImpact ())
+                return new List<double> ();
+            return GetImpactGeo ();
+        }
+
+        // ------------------------------------------------------------------
         // Health
         // ------------------------------------------------------------------
 
@@ -189,6 +228,35 @@ namespace KRPC.Bridge.Trajectories
         public static void UpdateTrajectory ()
         {
             TrajectoriesApi.Call (TrajectoriesApi.UpdateTrajectory, "UpdateTrajectory");
+        }
+
+        /// <summary>
+        /// drop the mod's cached aerodynamic model so the next computation rebuilds it from
+        /// the vessel as it is now. Returns true if the call reached the mod, false if the mod or
+        /// this internal member is absent. Never throws. Nothing in the bridge calls it: a client
+        /// that changes the vessel's drag without changing its parts calls it once afterwards.
+        ///
+        /// Why. Trajectories integrates through a force cache built when its model is created
+        /// (velocity x angle of attack x altitude), and rebuilds the model only when the part count
+        /// changes, or when its reference drag - the squared force at 3 km and 3000 m/s, axial -
+        /// changes by more than 20 %, at most every 10 s (AeroDynamicModel.IsValidFor, Trajectories
+        /// 2.4.5.4 decompiled). Opening grid fins changes neither enough: the prediction keeps the
+        /// closed fins for the rest of the descent (hyper hope, two flights: +885 and +930 m at the
+        /// cut and the start of the coast, for a coast that needed 6 to 25 % more axial drag from the
+        /// open fins). The mod's internal Trajectory.InvalidateAerodynamicModel() is what its own
+        /// settings call; this only reaches it.
+        /// </summary>
+        [KRPCProcedure]
+        public static bool InvalidateAerodynamicModelV1 ()
+        {
+            if (!TrajectoriesApi.Resolved || TrajectoriesApi.InvalidateAerodynamicModel == null)
+                return false;
+            try {
+                TrajectoriesApi.InvalidateAerodynamicModel.Invoke (null, null);
+                return true;
+            } catch (Exception) {
+                return false;
+            }
         }
 
         /// <summary>

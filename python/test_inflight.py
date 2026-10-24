@@ -347,7 +347,7 @@ def main():
     try:
         import krpc
     except ImportError:
-        sys.exit("krpc is not installed:  pip install 'krpc>=0.6,<0.7'")
+        sys.exit("krpc is not installed:  pip install 'krpc>=0.7,<0.8'")
 
     try:
         conn = krpc.connect(name="bridge-acceptance")

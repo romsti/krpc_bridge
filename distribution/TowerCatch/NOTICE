@@ -1,0 +1,63 @@
+TowerCatch
+Copyright (c) 2026 romsti
+Licensed under the MIT License. See LICENSE.
+
+The booster catch tower of KRPC.Bridge's conn.tower_site service, as a package of its own.
+It used to travel inside GameData/KRPC.Bridge; it is separate so that installing the bridge
+does not install the tower's parts.
+
+
+WHAT THIS PACKAGE SHIPS
+-----------------------
+
+    Patches/TowerCatch.cfg       a ModuleManager patch: text written for this project
+    Crafts/Tour Catch v5.craft   the tower craft that tower_spawn_v1 puts on the ground
+    LICENSE, NOTICE, TowerCatch.version, manifest.json
+
+Nothing else. No model, no texture, no part and no file belonging to any mod or to the game
+is in it. The patch makes COPIES of parts that are already installed (ModuleManager's +PART,
+under new names, "TG.*"): the copies take their models from the mods and the game they
+come from, in the player's own installation, and nothing is redistributed. The craft lists
+those parts by name and position.
+
+
+WHAT IT NEEDS - INSTALLED SEPARATELY, NEVER BUNDLED
+---------------------------------------------------
+
+Without any one of them the patch cannot make a part, KSP cannot load the tower craft and a
+tower already in a save is removed by the game at load ("missing parts"). Install them
+before this package.
+
+    KRPC.Bridge (this repository)
+    MIT License. Its KRPC.Bridge.Tower.dll holds the services that put the tower on the
+    ground and read it (conn.tower_site, conn.tower). Earlier versions of the bridge carried
+    this patch and the craft inside GameData/KRPC.Bridge: with this package, remove them
+    (the deployment tool does), never keep both.
+
+    kRPC
+    LGPL v3 or later (service/SpaceCenter: GPL v3). https://github.com/krpc/krpc
+
+    ModuleManager
+    CC-BY-SA, ialdabaoth and contributors.
+
+    Modular Launch Pads (AlphaMensae)
+    CC-BY-NC-SA 4.0. Source of the mast, the base, the top and the truss copies. Its models
+    are not redistributed; do not use pictures of its models in advertising without the
+    author's permission.
+
+    HullCamera VDS Continued (linuxgurugamer)
+    GPL v3. Source of the tower's four cameras.
+
+    Kerbal Space Program expansions, bought from the game's publisher: Breaking Ground
+    (the hinges, "hinge_04") and Making History (the tubes around the hinges, "Tube3").
+    They cannot be installed by a mod manager: without them the tower does not load.
+
+The game's own parts (launch clamp, battery bank, structural panel) come from the base game.
+ReStock, if installed, only changes the model of the clamp.
+
+
+KERBAL SPACE PROGRAM
+--------------------
+
+Kerbal Space Program is a trademark of its respective owners. This package is an unofficial
+add-on, not affiliated with or endorsed by the developers or publishers of the game.

@@ -156,6 +156,7 @@ namespace KRPC.Bridge.Scan
                     "  will fail the scan with \"key 'SpaceCenter' was not present\".");
             }
 
+            var loadedTargets = new List<Assembly> ();
             foreach (var target in targets) {
                 var full = Path.GetFullPath (target);
                 if (!File.Exists (full)) {
@@ -168,13 +169,97 @@ namespace KRPC.Bridge.Scan
                     // Force type resolution now, so a missing dependency is reported here
                     // with a readable message instead of surfacing inside the scanner.
                     TouchTypes (loaded);
+                    loadedTargets.Add (loaded);
                 } catch (Exception e) {
                     Console.Error.WriteLine ("could not load " + Path.GetFileName (full) + ": " + e.Message);
                     return 2;
                 }
             }
 
-            return RunScanner (krpcCoreAssembly);
+            var scan = RunScanner (krpcCoreAssembly);
+            if (scan != 0)
+                return scan;
+            return CheckManifest (loadedTargets);
+        }
+
+        /// <summary>
+        /// Run the Core's own manifest code (KRPC.Bridge.Core.BridgeManifest, the body of
+        /// conn.bridge.manifest_v1) on the built DLLs and print what the game would answer.
+        ///
+        /// Fails the build when a layout of the Known table names a constant that does not
+        /// exist (the table drifted from the code), when a DLL carries no build stamp, or when
+        /// the DLLs come from different commits. A dirty tree is reported, not refused.
+        /// </summary>
+        static int CheckManifest (List<Assembly> targets)
+        {
+            var core = targets.FirstOrDefault (a => a.GetName ().Name == "KRPC.Bridge.Core");
+            if (core == null) {
+                Console.WriteLine ();
+                Console.WriteLine ("manifest: KRPC.Bridge.Core.dll not among the targets, not checked.");
+                return 0;
+            }
+            var manifest = core.GetType ("KRPC.Bridge.Core.BridgeManifest", false);
+            var lines = manifest == null ? null : manifest.GetMethod (
+                "Lines", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static,
+                null, new[] { typeof (IEnumerable<Assembly>) }, null);
+            if (lines == null) {
+                Console.Error.WriteLine ("manifest: BridgeManifest.Lines not found in the Core - is this an old Core?");
+                return 1;
+            }
+
+            List<string> rows;
+            try {
+                rows = (List<string>) lines.Invoke (null, new object[] { targets });
+            } catch (TargetInvocationException e) {
+                Console.Error.WriteLine ("manifest threw: " + (e.InnerException ?? e).Message);
+                return 1;
+            }
+
+            Console.WriteLine ();
+            Console.WriteLine ("manifest (what conn.bridge.manifest_v1() will answer):");
+            foreach (var row in rows)
+                Console.WriteLine ("  " + row.Replace ('\t', ' ').TrimEnd ());
+
+            var problems = new List<string> ();
+            if (rows.Count < 2) {
+                problems.Add ("no header");
+            } else {
+                var header = rows [0].Split ('\t')
+                    .Select (p => p.Split (new[] { '=' }, 2))
+                    .Where (p => p.Length == 2)
+                    .ToDictionary (p => p [0], p => p [1]);
+                var columns = rows [1].Split ('\t').ToList ();
+                int iAssembly = columns.IndexOf ("assembly"), iLayout = columns.IndexOf ("layout"),
+                    iProtocol = columns.IndexOf ("protocol"), iSchema = columns.IndexOf ("schema"),
+                    iSha = columns.IndexOf ("git_sha");
+                string sha;
+                header.TryGetValue ("git_sha", out sha);
+                if (string.IsNullOrEmpty (sha) || sha == "mixed")
+                    problems.Add ("the DLLs do not carry one commit (git_sha='" + sha + "')");
+                foreach (var row in rows.Skip (2)) {
+                    var cells = row.Split ('\t');
+                    if (cells.Length <= Math.Max (iSha, Math.Max (iSchema, iProtocol)))
+                        continue;
+                    if (cells [iSha].Length != 40)
+                        problems.Add (cells [iAssembly] + ": no build stamp");
+                    if (cells [iLayout].Length > 0 && (cells [iProtocol] == "?" || cells [iSchema] == "?"))
+                        problems.Add (cells [iAssembly] + " layout " + cells [iLayout]
+                                      + ": the constant named in BridgeManifest.Known does not exist");
+                }
+                string dirty;
+                if (header.TryGetValue ("git_dirty", out dirty) && dirty != "0")
+                    Console.WriteLine ("  NOTE: built from a DIRTY tree - fine to test, not a build to publish (manifest.json says deliverable: false).");
+            }
+
+            if (problems.Count == 0) {
+                Console.WriteLine ("OK - every DLL is stamped with one commit and every known layout resolves.");
+                return 0;
+            }
+            Console.Error.WriteLine ();
+            Console.Error.WriteLine (problems.Distinct ().Count () + " manifest problem(s):");
+            foreach (var problem in problems.Distinct ())
+                Console.Error.WriteLine ("  " + problem);
+            return 1;
         }
 
         /// <summary>

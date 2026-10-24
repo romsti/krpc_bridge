@@ -53,7 +53,7 @@
     <Compile Remove="obj\**" />
     <Compile Remove="bin\**" />
     <Compile Include="..\..\src\Plugins\**\*.cs"
-             Exclude="..\..\src\Plugins\**\AssemblyInfo.cs;..\..\src\Plugins\**\obj\**;..\..\src\Plugins\**\bin\**" />
+             Exclude="..\..\src\Plugins\Tower\**;..\..\src\Plugins\Stock\**;..\..\src\Plugins\**\AssemblyInfo.cs;..\..\src\Plugins\**\obj\**;..\..\src\Plugins\**\bin\**" />
   </ItemGroup>
 
   <!--

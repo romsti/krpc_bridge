@@ -1,15 +1,17 @@
 # KRPC.Bridge
 
 **kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
-mods that have no scriptable interface at all, made drivable from Python.
+mods that have no scriptable interface at all, made drivable from Python. Version 2 also adds
+services of its own (flight control and telemetry, stock utilities, booster catch towers) and
+**needs kRPC 0.7.0**: it does not load on kRPC 0.6.x.
 
 [![Documentation](https://img.shields.io/badge/docs-romsti.github.io-deeppink)](https://romsti.github.io/krpc_bridge/)
 [![KSP 1.12.x](https://img.shields.io/badge/KSP-1.12.x-blue)](https://www.kerbalspaceprogram.com/)
-[![kRPC 0.6](https://img.shields.io/badge/kRPC-0.6.x-blue)](https://github.com/krpc/krpc)
+[![kRPC 0.7](https://img.shields.io/badge/kRPC-0.7.0-blue)](https://github.com/krpc/krpc)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-📖 **[Full documentation](https://romsti.github.io/krpc_bridge/)** — all 88 procedures,
-a scripting guide, and search.
+📖 **[Full documentation](https://romsti.github.io/krpc_bridge/)** — every procedure (over 300
+members in twelve services), a scripting guide, and search.
 
 ```python
 import krpc
@@ -65,7 +67,7 @@ member when something has moved.
 
 ## What you get
 
-A hundred and fifty-odd remote procedures across five services. The full reference is in
+Over three hundred remote procedures and properties across twelve services. The full reference is in
 [`docs/API.md`](docs/API.md); the highlights:
 
 **`conn.fmrs`** — arm and disarm; list dropped stages with their separation timestamps,
@@ -94,27 +96,47 @@ autopilot: the prediction ignores thrust.
 can observe an *instant* rather than sampling a value; a reflection probe for exploring any
 loaded mod from Python.
 
-**`conn.actuators`** — one-call samples of every engine and gimbal on the active vessel,
-direct engine thrust directions that survive flight-scene reloads, plus short,
-automatically restored leases for per-engine independent throttle. Gimbal
-deflection is observed in degrees; it is not overwritten behind KSP's own `FixedUpdate`.
+**`conn.telemetry`** and **`conn.control`** — the
+first observes: one-call samples of every engine and gimbal on the active vessel, direct
+engine thrust directions that survive flight-scene reloads, the vessel's dynamics at the
+physics rate, by persistentId for a vessel that is not active. The second commands: short,
+automatically restored leases for per-engine independent throttle, whole command frames
+applied in one physics step. Gimbal deflection is observed in degrees; it is not overwritten
+behind KSP's own `FixedUpdate`. `conn.control` also carries AttitudeV1, an attitude controller
+that runs on the physics step; every one of its options is off until a client switches it on.
+
+**`conn.stock`**, **`conn.ident`**, **`conn.discovery`** — delta-v simulation and the stage table,
+staging from the frame loop, landing-leg deployment, the fields and events of part modules in one
+call; the identifiers kRPC holds but does not expose (part `flightID`, vessel `persistentId`);
+read-only introspection of the assemblies and types the game has loaded.
+
+**`conn.tower`** and **`conn.tower_site`** — booster catch towers: put one on the ground from a
+craft, list and read the towers of a game from the Space Center. The tower's parts are the
+separate, optional `TowerCatch` package (see Install).
 
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.6.x**. FMRS, OCISLY,
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY,
 MechJeb and Trajectories are each optional — install the ones you use, and the
 corresponding service reports `available = False` for the others.
 
-1. Download the latest release and unzip it so that `GameData/KRPC.Bridge/` lands in your
-   KSP `GameData/`:
+1. Download `KRPC.Bridge-x.y.z.zip` from the
+   [latest release](https://github.com/romsti/krpc_bridge/releases/latest) and unzip it so that
+   `GameData/KRPC.Bridge/` lands in your KSP `GameData/`:
 
    ```
    GameData/KRPC.Bridge/
    ├── KRPC.Bridge.Core.dll        + .xml
+   ├── manifest.json               (sha256 of every file, and the commit it was built from)
    ├── LICENSE, NOTICE, KRPC.Bridge.version
    └── Plugins/
        ├── KRPC.Bridge.Fmrs.dll    + .xml
-       ├── KRPC.Bridge.Actuators.dll + .xml
+       ├── KRPC.Bridge.Model.dll   + .xml   (pure model of the flight loop, no service)
+       ├── KRPC.Bridge.Control.dll + .xml   (conn.control: what flies)
+       ├── KRPC.Bridge.Telemetry.dll + .xml (conn.telemetry: what observes)
+       ├── KRPC.Bridge.Ident.dll   + .xml   (conn.ident)
+       ├── KRPC.Bridge.Stock.dll   + .xml   (conn.stock)
+       ├── KRPC.Bridge.Tower.dll   + .xml   (conn.tower, conn.tower_site)
        ├── KRPC.Bridge.Ocisly.dll  + .xml
        ├── KRPC.Bridge.MechJeb.dll + .xml
        └── KRPC.Bridge.Trajectories.dll + .xml
@@ -129,7 +151,7 @@ corresponding service reports `available = False` for the others.
    connection kRPC already gives you.
 
    ```
-   pip install "krpc>=0.6,<0.7"
+   pip install "krpc>=0.7,<0.8"
    ```
 
 3. Start KSP, start the kRPC server, then, from any REPL:
@@ -139,18 +161,38 @@ corresponding service reports `available = False` for the others.
    >>> conn = krpc.connect()
    >>> conn.bridge.ping()
    'pong'
-   >>> conn.bridge.available_plugins
-   ['FMRS', 'OCISLY', 'MechJeb', 'Trajectories']
+   >>> conn.bridge.available_plugins    # the plugins whose target resolved
+   [...]
    ```
 
    `python/check_bridge.py`, in this repository, prints the same thing with a full
    diagnostic per plugin. It is not in the download: the zip holds the assemblies
    and their `.xml`, and no Python at all.
 
-**Upgrading from the single-DLL version:** delete the old
-`GameData/KRPC.Bridge/Plugins/KRPC.Bridge.dll` by hand. With both present, two assemblies
-declare the same service names, kRPC refuses the duplicate, and that takes the *entire*
-kRPC server down — not just this mod.
+**The booster catch tower is a separate download, `TowerCatch-x.y.z.zip`, on the same release page**
+(optional: install it only if you fly a tower). It holds the tower's ModuleManager patch and its ready-made craft, which used to be
+inside `GameData/KRPC.Bridge`; the services that place and read a tower (`conn.tower_site`) are still in
+this mod's `KRPC.Bridge.Tower.dll`. Unzip it so that `GameData/TowerCatch/` lands in your `GameData/`:
+
+```
+GameData/TowerCatch/
+├── manifest.json, LICENSE, NOTICE, TowerCatch.version
+├── Patches/TowerCatch.cfg          ModuleManager patch (text only: copies of parts you have installed)
+└── Crafts/Tour Catch v5.craft      the tower `tower_spawn_v1` puts on the ground
+```
+
+It needs ModuleManager, **Modular Launch Pads**, **HullCamera VDS Continued** and this mod, and the two
+paid expansions **Breaking Ground** and **Making History**, which no mod manager can install: without any
+one of them KSP cannot load the tower. **Never keep two copies of the patch**: if you had a `KRPC.Bridge`
+that carries `Patches/TowerCatch.cfg`, delete `GameData/KRPC.Bridge/Patches` and `GameData/KRPC.Bridge/Crafts`
+when you install the package (an update of this mod through CKAN does it for you). Two copies make every tower
+part twice; no copy at all and KSP removes the towers of your saves at load. `conn.tower_site.tower_package_v1`
+tells which folder holds the patch.
+
+**Upgrading:** delete the old `GameData/KRPC.Bridge` folder before you unzip the new one. The set
+of DLLs changed between versions (and there was once a single `KRPC.Bridge.dll`); with an old and a
+new assembly side by side, two assemblies declare the same service names, kRPC refuses the
+duplicate, and that takes the *entire* kRPC server down — not just this mod.
 
 ## Build
 
@@ -159,15 +201,15 @@ in it. Nothing from the game is copied or redistributed.
 
 | Command | Produces | When |
 |---|---|---|
-| `.\build.cmd verify` | nothing — just checks the C# compiles | after every code change. One second, no install needed. |
-| `.\build.cmd` | all DLLs and their `.xml` in `dist/GameData/` | before testing. Also validates every kRPC signature. |
-| `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. |
+| `.\build.cmd verify` | nothing — checks the C# compiles, runs the tests that need no game, checks the docs | after every code change. No install needed; CI runs the same steps. |
+| `.\build.cmd` | all DLLs and their `.xml` in `dist/GameData/`, each stamped with its git commit, and `manifest.json` (sha256 of every file) | before testing. Also validates every kRPC signature. |
+| `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. It refuses an install that still has the bridge's old `Patches/TowerCatch.cfg`: delete `GameData/KRPC.Bridge/Patches` and `Crafts` first. |
 | `python tools/check_docs.py` | a report | docs against code, signature types, XML comments. |
-| `python tools/package.py` | `dist/KRPC.Bridge-x.y.z.zip` | at release time. This is what people download. |
+| `python tools/package.py` | `dist/KRPC.Bridge-x.y.z.zip` and `dist/TowerCatch-x.y.z.zip` | at release time. This is what people download. |
 | `.\build.cmd forget` | forgets the remembered KSP path | if you move or change install. |
 
 `build.cmd` only produces the DLLs. `tools/package.py` turns them into the release zip,
-refusing to build one in which any `.dll` lacks its `.xml`, one of the four expected
+refusing to build one in which any `.dll` lacks its `.xml`, one of the expected
 assemblies is missing, or `LICENSE`/`NOTICE` would be left out.
 
 Give the path explicitly the first time only if auto-detection fails:
@@ -282,7 +324,7 @@ sweep, and compare `get_time_till_impact()` between reads before trusting a jump
 
 ## Compatibility
 
-Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.6.0**,
+Verified against **FMRS Continued 1.2.9.6**, **Trajectories 2.4.5.4**, **kRPC 0.7.0**,
 **KSP 1.12.5**.
 
 Nothing is bound by hard reference, and every lookup is reported individually, so a mod
@@ -301,3 +343,11 @@ This mod ships only its own assemblies. It links against kRPC (LGPL v3, Copyrigh
 (MIT), MechJeb 2 (GPL-3.0), OCISLY and HullcamVDS Continued (GPL-3.0) and Trajectories
 (GPL-3.0) purely by reflection — no compile-time reference, no copied code, nothing
 redistributed. Thanks to their authors and maintainers.
+
+
+### Dynamics snapshot V3
+
+The Telemetry service provides an append-only dynamics snapshot (V3) with the same-tick
+realized engine wrench, kRPC's live aerodynamic wrench and telemetry, and translational
+external-force residuals. Historical schema-1 frames remain supported by the Python decoder
+`python/dynamics_v3.py`. See `docs/API.md`.

@@ -36,7 +36,7 @@ namespace KRPC.Bridge.Fmrs
     /// Verified against FMRS Continued 1.2.9.6.
     /// </summary>
     [KRPCService (Name = "FMRS", GameScene = GameScene.All)]
-    public static class FmrsService
+    public static partial class FmrsService
     {
         /// <summary>How long a jump waits, in seconds of real time, before giving up.</summary>
         const float JumpTimeoutSeconds = 90f;

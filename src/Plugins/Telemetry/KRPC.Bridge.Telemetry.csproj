@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    KRPC.Bridge.Telemetry (refactor R3): WHAT OBSERVES - DynamicsV3 (active and tracked
+    vessels), DynamicsExtV1, AeroActuatorV1, the aerodynamic wrench batch, the reflection cache
+    and the actuator samples. Service conn.telemetry. Read-only towards the game.
+
+    It references Control (the lease state its frames publish, the pump it rides on) and never
+    the reverse: a telemetry change never redeploys what flies.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Telemetry</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Telemetry</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Model\KRPC.Bridge.Model.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Control\KRPC.Bridge.Control.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- DynamicsSnapshotV3.2 reads kRPC 0.6 Flight telemetry directly so its aerodynamic values
+       use the same documented frames/units as clients. SpaceCenter ships with kRPC itself. -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(KRPCPath)\KRPC.SpaceCenter.dll">
+      <Name>KRPC.SpaceCenter</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateSpaceCenterPath" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(BridgeUseStubs)'!='true'">
+    <Error Condition="!Exists('$(KRPCPath)\KRPC.SpaceCenter.dll')"
+           Text="KRPC.SpaceCenter.dll not found under '$(KRPCPath)'. It ships with kRPC; the install is incomplete." />
+  </Target>
+
+</Project>

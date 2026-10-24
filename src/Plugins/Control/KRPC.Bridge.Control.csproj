@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    KRPC.Bridge.Control (refactor R3): WHAT FLIES - the legacy actuator leases, the atomic
+    protocol v2 and its owner, AttitudeV1 (loop, geometry, write, lateral force, families,
+    effectors) and the physics-step pump (ControlWatcher). Service conn.control.
+
+    It references the Core and the pure Model, NEVER the Telemetry: what observes registers
+    itself into Actuation.Observer, so a telemetry change never touches this DLL.
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>KRPC.Bridge.Control</AssemblyName>
+    <RootNamespace>KRPC.Bridge.Control</RootNamespace>
+    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\KRPC.Bridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Model\KRPC.Bridge.Model.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- AttitudeV1 reads references in kRPC frames (SpaceCenter.ReferenceFrame). SpaceCenter
+       ships with kRPC itself; this is not an optional mod. -->
+  <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">
+    <Reference Include="$(KRPCPath)\KRPC.SpaceCenter.dll">
+      <Name>KRPC.SpaceCenter</Name>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateSpaceCenterPath" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(BridgeUseStubs)'!='true'">
+    <Error Condition="!Exists('$(KRPCPath)\KRPC.SpaceCenter.dll')"
+           Text="KRPC.SpaceCenter.dll not found under '$(KRPCPath)'. It ships with kRPC; the install is incomplete." />
+  </Target>
+
+</Project>

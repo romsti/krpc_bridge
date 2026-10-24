@@ -26,8 +26,14 @@ namespace KRPC.Bridge.Core
         /// <summary>True once bootstrap has completed.</summary>
         public static bool Ready { get; private set; }
 
+        // Core v2: the counter is hosted by the game clock (same increments, same value); the
+        // clock records the master tick of each increment (conn.bridge.clock_v1).
+        static readonly ClockCounter fixedUpdates = GameClock.Counter ("core.fixed_updates");
+
         /// <summary>Physics ticks since bootstrap. A cheap heartbeat for Python to check the pump is alive.</summary>
-        public static long Ticks { get; private set; }
+        public static long Ticks {
+            get { return fixedUpdates.Value; }
+        }
 
         void Awake ()
         {
@@ -40,9 +46,24 @@ namespace KRPC.Bridge.Core
 
             MainThread.Claim ();
             BridgeLog.Info ("core starting (assembly " +
-                            typeof (BridgeCore).Assembly.GetName ().Version + ")");
+                            typeof (BridgeCore).Assembly.GetName ().Version + ", " +
+                            BridgeManifest.StampLine (typeof (BridgeCore).Assembly) + ")");
 
             EventBus.Subscribe ();
+            // Nothing in Awake may throw past this point: an exception here leaves the Core
+            // without Start (Ready stays false, ping answers "loading") and without FixedUpdate
+            // (MainThread never pumps). Deployed 06/10 with a static-delegate hook: exactly that.
+            try {
+                VesselRegistry.Subscribe ();
+            } catch (System.Exception exc) {
+                BridgeLog.Error ("vessel registry: " + exc.Message);
+            }
+            // Refactor R1: the schema descriptors of the Core's own tables (layout_v1).
+            try {
+                CoreLayouts.Declare ();
+            } catch (System.Exception exc) {
+                BridgeLog.Error ("layout registry: " + exc.Message);
+            }
         }
 
         /// <summary>
@@ -72,7 +93,9 @@ namespace KRPC.Bridge.Core
 
         void FixedUpdate ()
         {
-            Ticks++;
+            // Opens the physics step on the game clock if its ObscenelyEarly callback did not.
+            GameClock.FromCoreFixedUpdate ();
+            fixedUpdates.Increment ();
             MainThread.Pump ();
 
             // Sweeping is cheap and only actually walks the dictionary when jobs exist,
@@ -83,8 +106,17 @@ namespace KRPC.Bridge.Core
 
         void OnDestroy ()
         {
-            if (instance == this)
-                instance = null;
+            if (instance != this)
+                return;     // a duplicate destroyed in its own Awake: it subscribed nothing
+            instance = null;
+            // Refactor lot 3: the event bus V2 hooks are removed symmetrically (the first log's
+            // hooks, as always, live as long as the session). The Core persists across scenes:
+            // this runs when the game quits.
+            try {
+                EventBus.UnsubscribeV2 ();
+            } catch (System.Exception exc) {
+                BridgeLog.Error ("event bus v2: " + exc.Message);
+            }
         }
     }
 }

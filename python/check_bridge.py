@@ -1,22 +1,40 @@
-"""Smoke test for KRPC.Bridge.
+r"""Smoke test for KRPC.Bridge.
 
 Run this the moment the DLLs are in GameData and KSP is in a flight scene. It answers,
 in order: is kRPC alive, did the Core load, which plugins resolved and why not, and what
 would a jump target look like right now.
 
     python python/check_bridge.py
+    python python/check_bridge.py --ksp "D:\Games\KSP_1.12.5"   also compare with the installed manifest.json
 
 Nothing here jumps, recovers or touches the flight. It only reads.
+
+The "Build" section reads conn.bridge.manifest_v1(): the commit every loaded KRPC.Bridge
+assembly was built from, whether the tree was clean, and the versioned layouts this build
+knows. With --ksp, it also reads GameData/KRPC.Bridge/manifest.json, written by build.cmd and
+shipped in the release zip, and checks that the commit that RUNS is the commit that was
+INSTALLED, and that every file on disk still has the sha256 the manifest gives. Exit code 1 if
+not.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
+import json
+import os
 import sys
+import math
+
+try:
+    from dynamics_v3 import decode_snapshot
+except ImportError:
+    decode_snapshot = None
 
 try:
     import krpc
 except ImportError:  # pragma: no cover
-    sys.exit("krpc is not installed:  pip install 'krpc>=0.6,<0.7'")
+    sys.exit("krpc is not installed:  pip install 'krpc>=0.7,<0.8'")
 
 
 def line(label: str, value: object) -> None:
@@ -36,7 +54,95 @@ def _safe(read, default):
         return default
 
 
-def main() -> int:
+def _norm3(state: dict, prefix: str):
+    vals = [state.get(prefix + axis, float("nan")) for axis in ("x", "y", "z")]
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in vals):
+        return None
+    return math.sqrt(sum(float(v) * float(v) for v in vals))
+
+
+def _parse_manifest(rows):
+    """conn.bridge.manifest_v1() as (header dict, list of row dicts)."""
+    if len(rows) < 2:
+        return {}, []
+    header = dict(p.split("=", 1) for p in rows[0].split("\t") if "=" in p)
+    columns = rows[1].split("\t")
+    return header, [dict(zip(columns, r.split("\t"))) for r in rows[2:]]
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def check_build(conn, ksp_root):
+    """The Build section. Returns False when what runs is not one clean, deployed build."""
+    print("\nBuild")
+    if not hasattr(conn.bridge, "manifest_v1"):
+        print("  manifest_v1 missing: this Core predates the build stamp (lot 2).")
+        return True
+    header, entries = _parse_manifest(conn.bridge.manifest_v1())
+    ok = True
+    line("commit (loaded)", header.get("git_sha", "?"))
+    line("one clean build", "yes" if header.get("consistent") == "1" else "NO")
+    if header.get("consistent") != "1":
+        ok = False
+        for e in entries:
+            if not e.get("layout"):
+                print(f"      {e.get('assembly'):<26} {e.get('git_sha') or 'no stamp':<42} "
+                      f"dirty={e.get('git_dirty') or '?'}")
+    assemblies = sorted({e.get("assembly") for e in entries})
+    line("assemblies", f"{len(assemblies)}: " + ", ".join(a.replace("KRPC.Bridge.", "")
+                                                        for a in assemblies))
+    layouts = [e for e in entries if e.get("layout")]
+    line("versioned layouts", ", ".join(
+        f"{e['layout']} {e.get('protocol')}" + (f".{e['schema']}" if e.get("schema") else "")
+        for e in layouts))
+    missing = [e["layout"] for e in layouts if "?" in (e.get("protocol"), e.get("schema"))]
+    if missing:
+        ok = False
+        line("UNRESOLVED layouts", ", ".join(missing))
+
+    if not ksp_root:
+        line("deployed manifest", "not compared (pass --ksp <KSP root>)")
+        return ok
+    moddir = os.path.join(ksp_root, "GameData", "KRPC.Bridge")
+    path = os.path.join(moddir, "manifest.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            deployed = json.load(handle)
+    except (OSError, ValueError) as exc:
+        line("deployed manifest", f"UNREADABLE: {path} ({exc})")
+        return False
+    line("commit (deployed)", f"{deployed.get('git_sha')} "
+                              f"({'clean' if not deployed.get('git_dirty') else 'DIRTY'})")
+    if deployed.get("git_sha") != header.get("git_sha"):
+        ok = False
+        line("RUNS = DEPLOYED", "NO - KSP loaded other DLLs than the deployed ones "
+                                "(deployed while KSP ran?) - restart KSP")
+    else:
+        line("runs = deployed", "yes")
+    bad = []
+    for entry in deployed.get("files", []):
+        full = os.path.join(moddir, entry["path"].replace("/", os.sep))
+        if not os.path.isfile(full):
+            # Shipped in the release, not installed in the flight instances.
+            if not entry["path"].startswith("Plugins/KRPC.Bridge.MechJeb."):
+                bad.append(entry["path"] + " missing")
+        elif _sha256(full) != entry["sha256"]:
+            bad.append(entry["path"] + " changed")
+    line("files vs manifest", "all sha256 match" if not bad else "; ".join(bad))
+    return ok and not bad
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Smoke test for KRPC.Bridge (read only).")
+    parser.add_argument("--ksp", default="",
+                        help="KSP root, to compare what runs with the deployed manifest.json")
+    args = parser.parse_args(argv)
     print("Connecting to kRPC...")
     try:
         conn = krpc.connect(name="bridge-check")
@@ -65,9 +171,12 @@ def main() -> int:
     line("bridge.ping()", conn.bridge.ping())
     line("core version", conn.bridge.version)
     line("services", ", ".join(
-        s for s in ("bridge", "actuators", "fmrs", "ident", "ocisly", "mech_jeb", "trajectories")
+        s for s in ("bridge", "discovery", "control", "telemetry", "actuators", "fmrs", "ident",
+                    "ocisly", "mech_jeb", "trajectories", "stock", "stock_delta_v", "tower")
         if hasattr(conn, s)))
     line("events recorded", conn.bridge.events_recorded)
+
+    build_ok = check_build(conn, args.ksp)
 
     print("\nPlugins")
     for row in conn.bridge.plugins:
@@ -83,23 +192,33 @@ def main() -> int:
         print("  on KRPC.Bridge.Core cannot be satisfied, and says so.")
         return 1
 
-    # 2. Actuators. Read-only here: commands belong to an explicitly armed GNC probe.
-    print("\nActuators")
-    if not hasattr(conn, "actuators"):
-        print("      service missing -- rebuild and reinstall the DLL")
+    # 2. Control and Telemetry (refactor R3; conn.actuators before). Read-only here: commands
+    # belong to an explicitly armed GNC probe.
+    print("\nControl and Telemetry")
+    if conn.krpc.game_scene != conn.krpc.GameScene.flight:
+        # Control and Telemetry only answer in the flight scene: stop here, the Build section above already
+        # says whether the deployed bridge is the one that runs.
+        print("      needs the flight scene (now %s): put a vessel on the pad and run again"
+              % conn.krpc.game_scene)
+        conn.close()
+        return 0 if build_ok else 1
+    ctl = getattr(conn, "control", None) or getattr(conn, "actuators", None)
+    tel = getattr(conn, "telemetry", None) or getattr(conn, "actuators", None)
+    if ctl is None or tel is None:
+        print("      service missing -- rebuild and reinstall the DLLs")
     else:
-        line("actuators.ping()", conn.actuators.ping())
-        line("engines", len(conn.actuators.engine_sample()) // 9)
-        line("gimbals", len(conn.actuators.gimbal_sample()) // 8)
+        line("control.ping() / telemetry.ping()", "%s / %s" % (ctl.ping(), tel.ping()))
+        line("engines", len(tel.engine_sample()) // 9)
+        line("gimbals", len(tel.gimbal_sample()) // 8)
         line("direct thrust directions",
-             len(conn.actuators.thrust_direction_sample()) // 5
-             if hasattr(conn.actuators, "thrust_direction_sample")
+             len(tel.thrust_direction_sample()) // 5
+             if hasattr(tel, "thrust_direction_sample")
              else "not deployed")
         line("independent gimbal command",
-             hasattr(conn.actuators, "lease_gimbal") and
-             hasattr(conn.actuators, "release_gimbal"))
-        if hasattr(conn.actuators, "control_snapshot_v2"):
-            snapshot = conn.actuators.control_snapshot_v2()
+             hasattr(ctl, "lease_gimbal") and
+             hasattr(ctl, "release_gimbal"))
+        if hasattr(ctl, "control_snapshot_v2"):
+            snapshot = ctl.control_snapshot_v2()
             if len(snapshot) < 14:
                 line("atomic protocol v2", "INVALID header")
             else:
@@ -113,10 +232,64 @@ def main() -> int:
                 line("snapshot shape",
                      "ok" if len(snapshot) == expected
                      else f"INVALID {len(snapshot)} != {expected}")
-                status_v2 = conn.actuators.control_status_v2()
+                status_v2 = ctl.control_status_v2()
                 line("exclusive owner active", bool(status_v2[3]))
         else:
             line("atomic protocol v2", "not deployed")
+
+        if hasattr(tel, "dynamics_snapshot_v3"):
+            dyn = tel.dynamics_snapshot_v3()
+            if not dyn:
+                line("dynamics protocol v3", "waiting for first FixedUpdate")
+            elif len(dyn) < 22:
+                line("dynamics protocol v3", "INVALID header")
+            else:
+                # Schema 3 (refactor R3) ends with the one-value clock section.
+                expected = (22 + int(dyn[12])
+                            + int(dyn[13]) * int(dyn[14])
+                            + int(dyn[15]) * int(dyn[16])
+                            + int(dyn[17]) * int(dyn[18])
+                            + (1 if int(dyn[1]) >= 3 else 0))
+                line("dynamics protocol v3", f"{int(dyn[0])}.{int(dyn[1])}")
+                line("dynamics tick", int(dyn[2]))
+                line("dynamics capabilities", hex(int(dyn[11])))
+                line("dynamics history", f"{int(dyn[20])}/{int(dyn[19])}")
+                line("dynamics shape",
+                     "ok" if len(dyn) == expected
+                     else f"INVALID {len(dyn)} != {expected}")
+                hist = tel.dynamics_frames_v3(max(0, int(dyn[2]) - 4), 8)
+                line("dynamics history RPC",
+                     f"{int(hist[2])} frame(s)" if len(hist) >= 6 else "INVALID")
+
+                if int(dyn[1]) >= 2 and decode_snapshot is not None:
+                    try:
+                        decoded = decode_snapshot(dyn)
+                        st = decoded["state"]
+                        line("dynamics capability names",
+                             ", ".join(sorted(decoded["capabilities"])))
+                        for label, prefix, unit in (
+                            ("engine force realized", "engine_force_body_n_", "N"),
+                            ("engine torque realized", "engine_torque_body_nm_", "N.m"),
+                            ("aero force live", "aero_force_body_n_", "N"),
+                            ("aero torque live", "aero_torque_body_nm_", "N.m"),
+                            ("external force residual",
+                             "external_force_residual_world_n_", "N"),
+                            ("unexplained non-aero",
+                             "unexplained_non_aero_force_world_n_", "N"),
+                        ):
+                            norm = _norm3(st, prefix)
+                            line(label, f"{norm:.3f} {unit}" if norm is not None else "NA")
+                        q = st.get("dynamic_pressure_pa")
+                        aoa = st.get("aoa_deg")
+                        beta = st.get("sideslip_deg")
+                        line("aero q / AoA / beta",
+                             (f"{q:.1f} Pa / {aoa:.3f} deg / {beta:.3f} deg"
+                              if all(isinstance(v, (int, float)) and math.isfinite(v)
+                                     for v in (q, aoa, beta)) else "NA"))
+                    except Exception as exc:
+                        line("dynamics v3.2 decode", f"ERROR: {exc}")
+        else:
+            line("dynamics protocol v3", "not deployed")
 
     # 3. FMRS.
     print("\nFMRS")
@@ -317,6 +490,9 @@ def main() -> int:
             line("state", f"unreadable: {exc}")
 
     conn.close()
+    if not build_ok:
+        print("\nBUILD CHECK FAILED (see Build above).")
+        return 1
     print("\nOK.")
     return 0
 
