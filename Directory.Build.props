@@ -41,6 +41,9 @@
          one mirror copy of dist\GameData into <KSP>\GameData, with no path rewriting.
          BridgeOutputSubdir is set per project: empty for Core, "Plugins" for plugins. -->
     <DistRoot>$(MSBuildThisFileDirectory)dist\GameData\KRPC.Bridge\</DistRoot>
+    <!-- The catch tower's plugin is not part of the bridge: it lands in the TowerCatch mod folder, next to the
+         parts it works with. Only KRPC.Bridge.Tower sets BridgeModRoot to this (see Directory.Build.targets). -->
+    <DistTowerRoot>$(MSBuildThisFileDirectory)dist\GameData\TowerCatch\</DistTowerRoot>
   </PropertyGroup>
 
   <!--

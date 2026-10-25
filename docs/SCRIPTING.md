@@ -6,7 +6,7 @@ back.
 
 Everything here is plain `krpc` (`pip install "krpc>=0.7,<0.8"`) — this mod ships no
 client library of its own, and there is nothing to import beyond `krpc` itself. The
-bridge adds `conn.bridge`, `conn.fmrs`, `conn.ocisly` and `conn.mech_jeb` to the
+bridge adds `conn.bridge`, `conn.fmrs` and `conn.ocisly` (and the rest of its services) to the
 connection you already have, and `help(conn.fmrs)` in a REPL gives you the reference.
 
 **Contents**
@@ -18,9 +18,6 @@ connection you already have, and `help(conn.fmrs)` in a REPL gives you the refer
 - [Grouping stages that came off together](#grouping-stages-that-came-off-together)
 - [Replaying a landing](#replaying-a-landing)
 - [Reading what a recovery earned](#reading-what-a-recovery-earned)
-- [Ascent with MechJeb and manual staging](#ascent-with-mechjeb-and-manual-staging)
-- [Driving the rest of MechJeb](#driving-the-rest-of-mechjeb)
-- [Planning a burn](#planning-a-burn)
 - [Cameras](#cameras)
 - [Writing your own plugin](#writing-your-own-plugin)
 - [When it does not work](#when-it-does-not-work)
@@ -42,14 +39,14 @@ for row in conn.bridge.plugins:
 ```
 FMRS     ok       1.2.9.6    jump[guid,bool]=True jump[string]=True ...
 OCISLY   ok       1.0.114.0  assembly=OfCourseIStillLoveYou ns=<global> ...
-MechJeb  MISSING             no loaded assembly matches 'MechJeb' - mod not installed?
+Trajectories MISSING         no loaded assembly matches 'Trajectories' - mod not installed?
 ```
 
 Write the guard once and mean it. Almost every member of an unavailable service raises
 `RuntimeError`, and doing that check at the top turns a mid-flight failure into a one-line
 exit. The exceptions are deliberate: `ping()` still answers, and `fmrs.active`,
-`fmrs.jump_in_progress` and `mech_jeb.on_vessel` return `False` rather than throwing — so
-those three will not tell you the mod is missing.
+`fmrs.jump_in_progress` return `False` rather than throwing — so
+those two will not tell you the mod is missing.
 
 ```python
 def require(service, name):
@@ -349,229 +346,6 @@ happened — can have it applied on return; read it after recovering and before 
 
 ---
 
-## Ascent with MechJeb and manual staging
-
-The case that is hard to get any other way. MechJeb decides to stage when the current stage
-has no active engines left. On a launcher whose side boosters and core share a stage, that
-stays false while the core burns, so the boosters are never dropped.
-
-```python
-mj = conn.mech_jeb
-if not mj.available:
-    raise SystemExit(mj.diagnostics)
-if not mj.on_vessel:
-    raise SystemExit("no running MechJeb part on this craft - add an AR202")
-
-# What does THIS build actually call things? Never trust a name from a changelog.
-print("\n".join(mj.ascent_setting_names))
-
-mj.ascent_path = "CLASSIC"
-mj.set_ascent_setting("DesiredOrbitAltitude", 120000)    # SI: metres, not km
-mj.set_ascent_setting("DesiredInclination", 0)
-mj.set_ascent_setting("TurnStartAltitude", 2000)
-mj.set_ascent_setting("TurnEndAltitude", 60000)
-
-mj.autostage = False          # BEFORE engaging, not after
-mj.ascent_enabled = True
-assert mj.staging_users == 0, "MechJeb is still registered with staging"
-# Non-zero is not automatically a failure -- MechJeb's own windows and other
-# autopilots join the same pool. On a bare scripted launch it should be 0.
-```
-
-Now the staging decision is yours. A criterion that works for a shared-stage launcher is a
-relative drop in total thrust:
-
-```python
-import time
-
-vessel = conn.space_center.active_vessel
-thrust = conn.add_stream(getattr, vessel, "thrust")
-
-peak = 0.0
-while vessel.available_thrust > 0:
-    now = thrust()
-    peak = max(peak, now)
-    if peak > 0 and now < 0.6 * peak:      # boosters burnt out
-        vessel.control.activate_next_stage()
-        peak = 0.0
-        time.sleep(1.0)                     # let the new stage light
-    time.sleep(0.1)
-```
-
-**Order matters, and `staging_users` is how you verify it.** The autopilot reads
-`autostage` as it is enabled, to decide whether to register with the staging controller at
-all — flipping it afterwards leaves a window in which MechJeb may stage on its own. Zero
-users means nothing is asking MechJeb to stage, which is the state you wanted; `-1` means
-the pool could not be read, which is a different problem.
-
-**And it is a one-way switch.** `mj.autostage = True` later in the flight will not give
-staging back. MechJeb's setter re-registers only under a condition MechJeb itself never
-makes true, so that path is dead code — the flag flips and nothing else happens. If you
-need MechJeb staging again mid-flight, cycle the autopilot:
-
-```python
-mj.autostage = True
-mj.ascent_enabled = False
-mj.ascent_enabled = True          # registration runs here, not on the line above
-assert mj.staging_users > 0
-```
-
-**If your side boosters are solids, none of this is necessary.** MechJeb's staging
-controller has a `DropSolids` mode that skips the active-engine test for throttle-locked
-engines, so it will drop solid boosters while the core burns. The problem this section
-solves is specific to *liquid* side boosters sharing a stage with the core.
-
-**Disengaging politely.** `mj.ascent_enabled = False` withdraws only your script's request.
-If the player also clicked Engage in MechJeb's window, their request stands and the
-autopilot keeps flying. `mj.disengage_ascent()` clears the pool outright — use that on a
-cleanup path, where leaving an autopilot engaged would carry into the next flight.
-
----
-
-## Driving the rest of MechJeb
-
-The ascent members above are the ones with names of their own. Everything else in MechJeb —
-twenty other modules, roughly two hundred settings — goes through five accessors instead,
-and the first thing to call is the one that tells you what is there.
-
-```python
-mj = conn.mech_jeb
-print(mj.modules)
-# ['Ascent', 'AscentSettings', 'Attitude', 'Glueball', 'Guidance', 'Hoverslam',
-#  'Landing', 'Node', 'RCS', 'Rcsbal', 'Rover', 'Settings', 'SmartASS', 'Solarpanel',
-#  'Spinup', 'StageStats', 'Staging', 'Target', 'Thrust', 'Warp', 'AntennaControl']
-
-for row in mj.describe_module("Staging"):
-    print(row)
-# AutostageLimit             number  EditableInt          rw  persistent:GLOBAL
-# AutostagePostDelay         number  EditableDouble       rw  persistent:GLOBAL
-# DropSolids                 flag    Boolean              rw  persistent:GLOBAL
-# FairingMinAltitude         number  EditableDoubleMult   rw  persistent:GLOBAL
-# HotStaging                 flag    Boolean              rw  persistent:GLOBAL
-```
-
-**The second column tells you which accessor to use** — `number` → `setting()`, `flag` →
-`flag()`, `enum` → `enum_value()`, `list` → `list_value()`, `text` → read-only. A module
-this MechJeb does not publish under a short name is still reachable by its class name:
-`mj.describe_module("MechJebModuleRendezvousAutopilot")`.
-
-**The last column is the one to read twice.** `persistent:GLOBAL` means the setting is saved
-for **every vessel in every save on that install**. A script that tunes an ascent parameter
-for one launcher has changed the default for all of them. The bridge does not block it —
-that would make it useless for the main use case — but nothing tells the player either.
-
-Two things you could not do at all before:
-
-```python
-# Stage, but never past stage 3. The middle ground between autostage on and off.
-mj.set_setting("Staging", "AutostageLimit", 3)
-
-# Cap the ascent by dynamic pressure instead of by throttle guesswork.
-mj.set_flag("Thrust", "LimitDynamicPressure", True)
-mj.set_setting("Thrust", "MaxDynamicPressure", 20000)
-```
-
-**Engaging is not uniform and the differences are handled for you.** `mj.engage("Node")`
-adds you to a module's user pool; `mj.disengage("Node")` withdraws, and the module keeps
-running if MechJeb's own window still wants it — which is why both return the remaining
-user count rather than nothing. Modules that run themselves refuse to be disengaged, and
-settings bags say they are not autopilots. Three modules need a method rather than the
-pool: `land_at_target()`, `execute_node()`, `smart_ass_engage()`.
-
-**The landing predictor costs nothing to read.** It runs whenever you are in flight,
-republishing about once a second, so nothing has to be engaged:
-
-```python
-import math
-
-if mj.landing_predicted:
-    print(f"impact {mj.landing_latitude:.4f}, {mj.landing_longitude:.4f}")
-    print(f"ignite in {mj.ignition_countdown:.1f}s, {mj.landing_delta_v:.0f} m/s")
-    print(f"slope there: {mj.landing_slope:.1f} deg")
-```
-
-Every number is `NaN` when there is no solution, so test `landing_predicted` first rather
-than trusting a zero. Stock kRPC has no impact prediction of any kind, and this one
-propagates through the atmosphere — it is what a boostback burn exists to null out, and an
-independent check on a descent solver of your own.
-
----
-
-## Planning a burn
-
-MechJeb can compute a Hohmann transfer, a plane match, an intercept, a moon return. The
-design decision that matters is what you get back: **an ordinary KSP maneuver node**.
-MechJeb computes and places it, and from there you are in stock kRPC.
-
-```python
-mj = conn.mech_jeb
-vessel = conn.space_center.active_vessel
-
-print(mj.maneuver_operations)
-# ['OperationApoapsis', 'OperationCircularize', 'OperationCourseCorrection',
-#  'OperationEccentricity', 'OperationGeneric', 'OperationInclination', ...]
-
-# Raise apoapsis to 200 km at the next periapsis, then circularise there.
-mj.set_maneuver_time_reference("OperationApoapsis", "PERIAPSIS")
-mj.set_maneuver_parameter("OperationApoapsis", "NewApA", 200000)   # SI: metres
-mj.create_maneuver_nodes("OperationApoapsis")
-
-mj.set_maneuver_time_reference("OperationCircularize", "APOAPSIS")
-mj.create_maneuver_nodes("OperationCircularize")   # append=True: plans from the last node
-
-for node in vessel.control.nodes:                  # stock kRPC from here on
-    print(f"t={node.ut:.0f}  {node.delta_v:.1f} m/s  prograde {node.prograde:.1f}")
-```
-
-**Operations are named by class, not by label.** MechJeb's labels are translated, so a
-script keyed on `"circularize"` breaks on a French install. `maneuver_operation_name()`
-gives the label if you need to display one.
-
-**`describe_maneuver()` lists the parameters**, in the same format as `describe_module()`,
-including the burn-time ones. And `maneuver_time_references()` says which burn times the
-operation accepts — an unaccepted one is rejected with the list rather than ignored.
-
-**There is no absolute-UT burn time.** For a specific moment, choose `"X_FROM_NOW"` and set
-`LeadTime` to the seconds from now:
-
-```python
-mj.set_maneuver_time_reference("OperationCircularize", "X_FROM_NOW")
-mj.set_maneuver_parameter("OperationCircularize", "LeadTime",
-                          target_ut - conn.space_center.ut)
-```
-
-**Set a target a tick before you use it.** MechJeb syncs the target on its own
-`FixedUpdate`, so a target set through stock kRPC is invisible to it in the same frame:
-
-```python
-conn.space_center.target_vessel = station
-conn.space_center.wait()                     # let one tick pass
-mj.set_maneuver_time_reference("OperationPlane", "REL_HIGHEST_AD")
-mj.create_maneuver_nodes("OperationPlane")
-```
-
-**Failures explain themselves, warnings do not interrupt.** No target, a target in another
-sphere of influence, an apoapsis below the surface — all raise with MechJeb's own message.
-But three operations plan a perfectly good burn and still have a caveat, so that goes to
-`maneuver_warning` instead of rejecting the plan:
-
-```python
-count = mj.create_maneuver_nodes("OperationSemiMajor")
-if mj.maneuver_warning:
-    print("MechJeb says:", mj.maneuver_warning)
-```
-
-**Two things are shared with MechJeb's own window.** The burn-time selection is one object
-per operation type, so setting it changes what the player sees in the Maneuver Planner —
-and vice versa. And parameters live on a single instance per operation, so two scripts
-planning the same operation share them.
-
-**Interplanetary transfers are not supported.** That operation's solver is built by
-MechJeb's GUI and returns "Started computation" forever when driven headlessly. It is the
-one thing here that has to be done another way.
-
----
-
 ## Cameras
 
 If you use OCISLY, the short version is: **do nothing**. `auto_rearm` and
@@ -673,8 +447,8 @@ Four rules worth knowing before you write a signature:
    trip per property read. Pack records as tab-separated strings instead; see `CoreService`.
 
 4. **Property getters get streamed.** A client can put a stream on any of them, and it will
-   then re-run every physics tick. Keep them cheap, or cache — `MechJebService` caches its
-   reflection walks for exactly this reason.
+   then re-run every physics tick. Keep them cheap, or cache — `ModRegistry` compiles its
+   reflection walks once, for exactly this reason.
 
 `docs/ARCHITECTURE.md` covers the rest: load order, the main-thread question, background
 jobs, and why plugin isolation is a build-time property.
@@ -693,7 +467,6 @@ jobs, and why plugin isolation is a build-time property.
 | The game gets dragged back into flight | `switched_to_dropped` was true when something changed scene. `jump_to_main()` first. |
 | Cameras do not come back | `conn.ocisly.last_restore` says what the restore did. If it says `nothing was on air`, the snapshot was empty — OCISLY was not streaming when the scene was torn down. |
 | Two camera feeds swapped | `disambiguate_names` was off. Turn it on, or call `name_cameras()`. |
-| MechJeb "engage" does nothing | `conn.mech_jeb.diagnostics`, and look for `WARNING: inherited` in the pool report. That means the bridge bound to `List`'s `Add` instead of `UserPool`'s, which adds to a list and enables nothing. |
 
 Both `python/check_bridge.py` and `conn.bridge.plugins` are designed to be the first thing
 you run. Start there.

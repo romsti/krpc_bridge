@@ -4,10 +4,15 @@
     conn.tower - test tools for the booster catch tower (Terminal Guidance) - and conn.tower_site,
     the towers of a game seen from the Space Center (list, state, spawn, remove, fly to).
 
-    A SEPARATE ASSEMBLY ON PURPOSE, and one with no reference to KRPC.Bridge.Core: it is a
-    ground-test tool, deployed on its own next to whatever Core and plugins the install
-    already runs, and it must not depend on their version. If it fails to load, KSP skips
-    it and every other conn.* service is untouched.
+    A SEPARATE ASSEMBLY ON PURPOSE, and one with no reference to KRPC.Bridge.Core: it must
+    not depend on the version of the Core's code. If it fails to load, KSP skips it and every
+    other conn.* service is untouched.
+
+    IT SHIPS IN THE TowerCatch PACKAGE, not in KRPC.Bridge: GameData/TowerCatch/Plugins, next to
+    the parts and the craft of the tower, so that a player who does not want the tower has none of
+    it. It loads after the Core all the same: AssemblyInfo.cs declares a KSPAssemblyDependency on
+    KRPC.Bridge.Core (a name, not a compile reference), and kRPC finds its services in the loaded
+    assemblies wherever the DLL lives.
 
     Hard reference to KRPC.SpaceCenter for the same reason as Ident: PlaceV1 takes a
     SpaceCenter.Vessel and a SpaceCenter.ReferenceFrame, which a signature cannot get by
@@ -24,7 +29,10 @@
   <PropertyGroup>
     <AssemblyName>KRPC.Bridge.Tower</AssemblyName>
     <RootNamespace>KRPC.Bridge.Tower</RootNamespace>
-    <OutputPath>$(DistRoot)Plugins\</OutputPath>
+    <OutputPath>$(DistTowerRoot)Plugins\</OutputPath>
+    <!-- For Directory.Build.targets (DeployToKSP): the mod folder this assembly belongs to. -->
+    <BridgeModRoot>$(DistTowerRoot)</BridgeModRoot>
+    <BridgeModName>TowerCatch</BridgeModName>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(BridgeUseStubs)'!='true'">

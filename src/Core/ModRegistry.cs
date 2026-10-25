@@ -367,9 +367,9 @@ namespace KRPC.Bridge.Core
         /// correctly to any method returning a class - and returns null rather than
         /// throwing if it cannot, so the caller can keep a reflection fallback.
         ///
-        /// Worth doing for anything on the path of a streamed property. MechJeb's
-        /// GetMasterMechJeb is the case in point: every single MechJeb getter goes through
-        /// it, and a stream would call it sixty times a second.
+        /// Worth doing for anything on the path of a streamed property: a stream
+        /// calls its getter sixty times a second, and a lookup through a singleton or a
+        /// scene-wide search would be paid every time.
         /// </summary>
         public static Func<TArg, object> StaticCall<TArg> (MethodInfo method)
         {

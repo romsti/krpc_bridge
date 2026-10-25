@@ -1,6 +1,6 @@
 # KRPC.Bridge
 
-**kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
+**kRPC services for FMRS, OCISLY and Trajectories.** Three Kerbal Space Program
 mods that have no scriptable interface at all, made drivable from Python. Version 2 also adds
 services of its own (flight control and telemetry, stock utilities, booster catch towers) and
 **needs kRPC 0.7.0**: it does not load on kRPC 0.6.x.
@@ -44,7 +44,7 @@ objects, plus the `KSPField`, `KSPEvent` and `KSPAction` members of any `PartMod
 that is the whole of it. A mod whose functionality lives in a static class, a singleton or
 a `ScenarioModule` is simply invisible.
 
-All four mods here are exactly that shape:
+All three mods here are exactly that shape:
 
 - **FMRS** exposes no `KSPEvent`, no action group and no key binding. Its jump API is a
   public method on a `MonoBehaviour` that stock kRPC has no way to reach. And the jump is
@@ -53,16 +53,12 @@ All four mods here are exactly that shape:
 - **OCISLY** subscribes to no scene `GameEvent` and uses no `DontDestroyOnLoad`, so that
   reload silently drops every camera it was streaming — and nothing in the game brings
   them back.
-- **MechJeb**'s ascent autopilot is reachable in principle, but the established bridge
-  ([Genhis/KRPC.MechJeb](https://github.com/Genhis/KRPC.MechJeb)) targets 2.14.3 and no
-  longer loads against 2.15.x, because it looks types and members up by exact name and
-  2.15 renamed most of them.
 - **Trajectories** has a real public API — a static class, `Trajectories.API` — which is
   exactly the shape kRPC cannot see. It holds the only atmospheric impact prediction in
   the game that integrates the stock drag cubes at the vessel's actual attitude, and
   stock kRPC has no impact prediction of any kind.
 
-This mod reaches all four by reflection, resolved once at load, and reports member by
+This mod reaches all three by reflection, resolved once at load, and reports member by
 member when something has moved.
 
 ## What you get
@@ -79,11 +75,6 @@ delete a tracked stage.
 **`conn.ocisly`** — restore camera streams across a scene reload, automatically and by
 default, even when the jump was made by hand with no script running. Give duplicate
 Hullcams names that are unique *and* stable across a reload, so two feeds can never swap.
-
-**`conn.mech_jeb`** — fly the ascent, addressed by setting name so a MechJeb rename costs
-a string in your script rather than a rebuilt DLL. And the reason this service exists:
-take back the staging decision while MechJeb keeps flying, which is the only way to drop
-side boosters that share a stage with the core.
 
 **`conn.trajectories`** — Trajectories' atmospheric impact point as latitude, longitude and
 terrain altitude, the seconds until it, the impact velocity; set and clear the mod's
@@ -111,13 +102,14 @@ call; the identifiers kRPC holds but does not expose (part `flightID`, vessel `p
 read-only introspection of the assemblies and types the game has loaded.
 
 **`conn.tower`** and **`conn.tower_site`** — booster catch towers: put one on the ground from a
-craft, list and read the towers of a game from the Space Center. The tower's parts are the
-separate, optional `TowerCatch` package (see Install).
+craft, list and read the towers of a game from the Space Center. They are part of the separate,
+optional `TowerCatch` package (the tower's parts, its craft and these two services; see Install): the
+bridge holds nothing of the tower.
 
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY,
-MechJeb and Trajectories are each optional — install the ones you use, and the
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY
+and Trajectories are each optional — install the ones you use, and the
 corresponding service reports `available = False` for the others.
 
 1. Download `KRPC.Bridge-x.y.z.zip` from the
@@ -136,9 +128,7 @@ corresponding service reports `available = False` for the others.
        ├── KRPC.Bridge.Telemetry.dll + .xml (conn.telemetry: what observes)
        ├── KRPC.Bridge.Ident.dll   + .xml   (conn.ident)
        ├── KRPC.Bridge.Stock.dll   + .xml   (conn.stock)
-       ├── KRPC.Bridge.Tower.dll   + .xml   (conn.tower, conn.tower_site)
        ├── KRPC.Bridge.Ocisly.dll  + .xml
-       ├── KRPC.Bridge.MechJeb.dll + .xml
        └── KRPC.Bridge.Trajectories.dll + .xml
    ```
 
@@ -170,29 +160,35 @@ corresponding service reports `available = False` for the others.
    and their `.xml`, and no Python at all.
 
 **The booster catch tower is a separate download, `TowerCatch-x.y.z.zip`, on the same release page**
-(optional: install it only if you fly a tower). It holds the tower's ModuleManager patch and its ready-made craft, which used to be
-inside `GameData/KRPC.Bridge`; the services that place and read a tower (`conn.tower_site`) are still in
-this mod's `KRPC.Bridge.Tower.dll`. Unzip it so that `GameData/TowerCatch/` lands in your `GameData/`:
+(optional: install it only if you fly a tower; `KRPC.Bridge` holds nothing of it). It is the whole tower: its
+ModuleManager patch, its ready-made craft, and its plugin `KRPC.Bridge.Tower.dll`, which declares the services
+that place and read a tower (`conn.tower`, `conn.tower_site`). Without the package those two services simply do
+not exist. Unzip it so that `GameData/TowerCatch/` lands in your `GameData/`:
 
 ```
 GameData/TowerCatch/
 ├── manifest.json, LICENSE, NOTICE, TowerCatch.version
 ├── Patches/TowerCatch.cfg          ModuleManager patch (text only: copies of parts you have installed)
-└── Crafts/Tour Catch v5.craft      the tower `tower_spawn_v1` puts on the ground
+├── Crafts/Tour Catch v5.craft      the tower `tower_spawn_v1` puts on the ground
+└── Plugins/KRPC.Bridge.Tower.dll   + .xml   (conn.tower, conn.tower_site)
 ```
 
-It needs ModuleManager, **Modular Launch Pads**, **HullCamera VDS Continued** and this mod, and the two
-paid expansions **Breaking Ground** and **Making History**, which no mod manager can install: without any
-one of them KSP cannot load the tower. **Never keep two copies of the patch**: if you had a `KRPC.Bridge`
-that carries `Patches/TowerCatch.cfg`, delete `GameData/KRPC.Bridge/Patches` and `GameData/KRPC.Bridge/Crafts`
-when you install the package (an update of this mod through CKAN does it for you). Two copies make every tower
-part twice; no copy at all and KSP removes the towers of your saves at load. `conn.tower_site.tower_package_v1`
-tells which folder holds the patch.
+It needs ModuleManager, **Modular Launch Pads**, **HullCamera VDS Continued**, kRPC and **KRPC.Bridge 2.1.0 or
+later** (the plugin loads after the bridge's Core), and the two paid expansions **Breaking Ground** and
+**Making History**, which no mod manager can install: without any one of them KSP cannot load the tower.
+**Never keep two copies of the tower.** If you had KRPC.Bridge 2.0.0 or earlier, which carried the tower's
+files, delete `GameData/KRPC.Bridge/Plugins/KRPC.Bridge.Tower.dll` and `.xml` (two copies of the plugin
+declare the service `Tower` twice, kRPC refuses the duplicate, and the whole server goes down) and, if
+present, `GameData/KRPC.Bridge/Patches` and `GameData/KRPC.Bridge/Crafts` (two copies of the patch make
+every tower part twice). Deleting `GameData/KRPC.Bridge` before you unzip the new bridge does all of it.
+An update through CKAN does it for you. No copy of the patch at all and KSP removes the towers of your
+saves at load. `conn.tower_site.tower_package_v1` tells which folder holds the patch.
 
 **Upgrading:** delete the old `GameData/KRPC.Bridge` folder before you unzip the new one. The set
-of DLLs changed between versions (and there was once a single `KRPC.Bridge.dll`); with an old and a
-new assembly side by side, two assemblies declare the same service names, kRPC refuses the
-duplicate, and that takes the *entire* kRPC server down — not just this mod.
+of DLLs changed between versions (and there was once a single `KRPC.Bridge.dll`; 2.0.0 also carried the
+tower's plugin, and 2.1.0 has no MechJeb one); with an old and a new assembly side by side, two assemblies
+declare the same service names, kRPC refuses the duplicate, and that takes the *entire* kRPC server
+down — not just this mod. The tower's plugin now lives in `GameData/TowerCatch`: see above.
 
 ## Build
 
@@ -203,7 +199,7 @@ in it. Nothing from the game is copied or redistributed.
 |---|---|---|
 | `.\build.cmd verify` | nothing — checks the C# compiles, runs the tests that need no game, checks the docs | after every code change. No install needed; CI runs the same steps. |
 | `.\build.cmd` | all DLLs and their `.xml` in `dist/GameData/`, each stamped with its git commit, and `manifest.json` (sha256 of every file) | before testing. Also validates every kRPC signature. |
-| `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. It refuses an install that still has the bridge's old `Patches/TowerCatch.cfg`: delete `GameData/KRPC.Bridge/Patches` and `Crafts` first. |
+| `.\build.cmd deploy` | the same, **and** copies into your GameData | to test in game. It refuses an install that still has the tower (or the MechJeb plugin) inside `GameData/KRPC.Bridge`: delete that folder first. |
 | `python tools/check_docs.py` | a report | docs against code, signature types, XML comments. |
 | `python tools/package.py` | `dist/KRPC.Bridge-x.y.z.zip` and `dist/TowerCatch-x.y.z.zip` | at release time. This is what people download. |
 | `.\build.cmd forget` | forgets the remembered KSP path | if you move or change install. |
@@ -269,7 +265,7 @@ KSP has started. Catching it before the DLL reaches `GameData` is the only optio
 | | |
 |---|---|
 | [`docs/API.md`](docs/API.md) | Every RPC, by service, with the reasoning behind the ones that are not obvious. |
-| [`docs/SCRIPTING.md`](docs/SCRIPTING.md) | Driving it from Python: a complete booster recovery, replaying a landing, ascent with manual staging, and what goes wrong. |
+| [`docs/SCRIPTING.md`](docs/SCRIPTING.md) | Driving it from Python: a complete booster recovery, replaying a landing, and what goes wrong. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core and plugins, load order, threading, and why plugin isolation is a build-time property. Read before adding a plugin. |
 
 **Read it as a site instead:** <https://romsti.github.io/krpc_bridge/> — same files, with a
@@ -309,10 +305,6 @@ ordinal in `Aerocam DN 2` is only appended while several cameras share a name on
 vessel, so splitting the stack turns it back into `Aerocam DN`. `conn.ocisly.remembered`
 gives you the tokens.
 
-**Set MechJeb's `autostage` before engaging, and know it does not go back.** The autopilot
-reads it as it is enabled, to decide whether to register with the staging controller at all.
-Setting it true again later re-registers nothing — cycle `ascent_enabled` instead.
-
 **Trajectories predicts the coast, not the flight.** Its impact point ignores thrust
 entirely, so under power it answers "where do I land if I cut the engines now". It
 integrates the vessel's *current* attitude unless a descent profile is set — a booster
@@ -340,7 +332,7 @@ Source: https://github.com/romsti/krpc_bridge
 
 This mod ships only its own assemblies. It links against kRPC (LGPL v3, Copyright
 2015-2023 kRPC Org) using the copy already in your `GameData`, and reaches FMRS Continued
-(MIT), MechJeb 2 (GPL-3.0), OCISLY and HullcamVDS Continued (GPL-3.0) and Trajectories
+(MIT), OCISLY and HullcamVDS Continued (GPL-3.0) and Trajectories
 (GPL-3.0) purely by reflection — no compile-time reference, no copied code, nothing
 redistributed. Thanks to their authors and maintainers.
 

@@ -394,7 +394,7 @@ namespace KRPC.Bridge.Core
         ///
         /// This fires GameEvents.onHideUI rather than blanking the stock canvases
         /// directly, which is the difference that makes MOD windows disappear too -
-        /// FMRS's window, OCISLY's, MechJeb's, the toolbar. For a recorded flight that is
+        /// FMRS's window, OCISLY's, the toolbar. For a recorded flight that is
         /// the whole point.
         /// </summary>
         [KRPCProcedure (GameScene = GameScene.Flight)]

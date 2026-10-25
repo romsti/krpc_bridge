@@ -4,6 +4,42 @@ All notable changes to KRPC.Bridge. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-10-25
+
+MechJeb leaves the bridge, and the booster catch tower becomes one optional package, complete:
+`TowerCatch` 1.1.0 now carries the tower's plugin as well as its parts and its craft, and
+`KRPC.Bridge` holds nothing of the tower. Same kRPC 0.7.0 as 2.0.0.
+
+**Upgrading from 2.0.0.** Delete the old `GameData/KRPC.Bridge` folder before you unzip the new one. If
+you update by hand instead, delete `GameData/KRPC.Bridge/Plugins/KRPC.Bridge.Tower.dll` and
+`KRPC.Bridge.MechJeb.dll` (and their `.xml`) yourself: the tower's plugin is now in
+`GameData/TowerCatch/Plugins`, and two copies of it declare the kRPC service `Tower` twice, which kRPC
+refuses and which takes the whole server down. Install `TowerCatch-1.1.0.zip` the same way if you use a
+tower; it needs `KRPC.Bridge` 2.1.0 or later.
+
+### Removed
+
+- **The MechJeb service (`conn.mech_jeb`) and its plugin `KRPC.Bridge.MechJeb.dll`**, with their
+  documentation: the maintainer no longer uses them. A script that used them stays on
+  `KRPC.Bridge` 2.0.0. Nothing else changes: MechJeb itself is not touched by the bridge any more, it is
+  simply no longer reached.
+
+### Changed
+
+- **The catch tower is entirely in `TowerCatch`.** `KRPC.Bridge.Tower.dll` (services `conn.tower` and
+  `conn.tower_site`, unchanged) moves from `GameData/KRPC.Bridge/Plugins` to `GameData/TowerCatch/Plugins`.
+  It declares `KSPAssemblyDependency("KRPC.Bridge.Core", 1, 3)`, so KSP loads it after the Core wherever
+  its folder is (it has no compile reference to the Core, and its layouts are still declared into the
+  Core's registry at load); without the Core, or without the package, KSP skips it and the two services
+  do not exist. Nothing in the services changes.
+- **CKAN.** The two records pick their own zip of the release by name (`version_from_asset`) and take
+  their own version from it, so `TowerCatch` is 1.1.0 and not the bridge's number; `TowerCatch` depends on
+  `kRPC` v0.7.0, `KRPC-Bridge` 2.1.0, ModuleManager, Modular Launch Pads and HullCamera VDS Continued, and
+  declares the Making History and Breaking Ground expansions (`MakingHistory-DLC`, `BreakingGround-DLC`);
+  `KRPC-Bridge` no longer suggests MechJeb 2, and conflicts with `TowerCatch` up to 1.0.0 (whose plugin it
+  no longer carries).
+- Versions: `KRPC.Bridge` 2.1.0 (every assembly 2.1.0.0), `TowerCatch` 1.1.0.
+
 ## [2.0.0] — 2026-10-24
 
 The first release since 1.0.0, and a breaking one: **it needs kRPC 0.7.0 and no longer loads on

@@ -8,5 +8,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Telemetry")]
 [assembly: AssemblyDescription ("What observes: coherent physics-rate frames of the vessels and their actuators (DynamicsV3, DynamicsExtV1, AeroActuatorV1), tracked vessels, aerodynamic wrench batch, samples. Read-only.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]

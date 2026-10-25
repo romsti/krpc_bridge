@@ -109,32 +109,40 @@ def check_build(conn, ksp_root):
     if not ksp_root:
         line("deployed manifest", "not compared (pass --ksp <KSP root>)")
         return ok
-    moddir = os.path.join(ksp_root, "GameData", "KRPC.Bridge")
+    # Two mod folders: the bridge, and TowerCatch (the catch tower, optional: it is checked when installed).
+    ok = _check_deployed(ksp_root, "KRPC.Bridge", header, ok, required=True)
+    return _check_deployed(ksp_root, "TowerCatch", header, ok, required=False)
+
+
+def _check_deployed(ksp_root, package, header, ok, required):
+    """One mod folder of GameData against its manifest.json. Returns ok, and False when it is not what runs."""
+    moddir = os.path.join(ksp_root, "GameData", package)
     path = os.path.join(moddir, "manifest.json")
+    if not required and not os.path.isdir(moddir):
+        line(f"{package} (optional)", "not installed")
+        return ok
     try:
         with open(path, encoding="utf-8") as handle:
             deployed = json.load(handle)
     except (OSError, ValueError) as exc:
-        line("deployed manifest", f"UNREADABLE: {path} ({exc})")
+        line(f"{package} manifest", f"UNREADABLE: {path} ({exc})")
         return False
-    line("commit (deployed)", f"{deployed.get('git_sha')} "
-                              f"({'clean' if not deployed.get('git_dirty') else 'DIRTY'})")
+    line(f"{package} commit (deployed)", f"{deployed.get('git_sha')} "
+                                         f"({'clean' if not deployed.get('git_dirty') else 'DIRTY'})")
     if deployed.get("git_sha") != header.get("git_sha"):
         ok = False
-        line("RUNS = DEPLOYED", "NO - KSP loaded other DLLs than the deployed ones "
-                                "(deployed while KSP ran?) - restart KSP")
+        line(f"{package}: RUNS = DEPLOYED", "NO - KSP loaded other DLLs than the deployed ones "
+                                            "(deployed while KSP ran?) - restart KSP")
     else:
-        line("runs = deployed", "yes")
+        line(f"{package}: runs = deployed", "yes")
     bad = []
     for entry in deployed.get("files", []):
         full = os.path.join(moddir, entry["path"].replace("/", os.sep))
         if not os.path.isfile(full):
-            # Shipped in the release, not installed in the flight instances.
-            if not entry["path"].startswith("Plugins/KRPC.Bridge.MechJeb."):
-                bad.append(entry["path"] + " missing")
+            bad.append(entry["path"] + " missing")
         elif _sha256(full) != entry["sha256"]:
             bad.append(entry["path"] + " changed")
-    line("files vs manifest", "all sha256 match" if not bad else "; ".join(bad))
+    line(f"{package}: files vs manifest", "all sha256 match" if not bad else "; ".join(bad))
     return ok and not bad
 
 
@@ -172,7 +180,7 @@ def main(argv=None) -> int:
     line("core version", conn.bridge.version)
     line("services", ", ".join(
         s for s in ("bridge", "discovery", "control", "telemetry", "actuators", "fmrs", "ident",
-                    "ocisly", "mech_jeb", "trajectories", "stock", "stock_delta_v", "tower")
+                    "ocisly", "trajectories", "stock", "stock_delta_v", "tower", "tower_site")
         if hasattr(conn, s)))
     line("events recorded", conn.bridge.events_recorded)
 
@@ -400,48 +408,7 @@ def main(argv=None) -> int:
         print(f"      {conn.ocisly.diagnostics}")
         print("      (send me this line — it names the exact member that is missing)")
 
-    # 4. MechJeb.
-    print("\nMechJeb")
-    if not hasattr(conn, "mech_jeb"):
-        print("      service missing -- rebuild and reinstall the DLL")
-    else:
-        line("mech_jeb.ping()", conn.mech_jeb.ping())
-        line("available", conn.mech_jeb.available)
-        if conn.mech_jeb.available:
-            line("on this vessel", conn.mech_jeb.on_vessel)
-            if conn.mech_jeb.on_vessel:
-                for label, read in (("ascent engaged", lambda: conn.mech_jeb.ascent_enabled),
-                                    ("ascent path", lambda: conn.mech_jeb.ascent_path),
-                                    ("autostage", lambda: conn.mech_jeb.autostage),
-                                    ("staging users", lambda: conn.mech_jeb.staging_users)):
-                    try:
-                        line(label, read())
-                    except RuntimeError as exc:
-                        # Names one member, not the whole service: that is the point
-                        # of resolving them separately.
-                        line(label, f"unreadable: {exc}")
-                # The knob list comes from the live assembly, so it is the ground
-                # truth for what this MechJeb build calls things.
-                try:
-                    names = conn.mech_jeb.ascent_setting_names
-                    line("ascent settings", len(names))
-                    wanted = ("desiredorbitaltitude", "desiredinclination",
-                              "turnstartaltitude", "turnendaltitude", "turnshapeexponent")
-                    for entry in names:
-                        if entry.split(":")[0].strip().lower() in wanted:
-                            print(f"      {entry}")
-                    line("ascent flags", len(conn.mech_jeb.ascent_flag_names))
-                except RuntimeError as exc:
-                    line("ascent settings", f"unreadable: {exc}")
-            else:
-                print("      MechJeb is installed but this craft carries no running "
-                      "MechJeb part (AR202 case, or a pod with MechJeb embedded).")
-        else:
-            print("      MechJeb not resolved. What the bridge found:")
-            print(f"      {conn.mech_jeb.diagnostics}")
-            print("      (send me this line - it names the exact member that moved)")
-
-    # 5. Trajectories. The service is Flight-only, so outside flight kRPC does not
+    # 4. Trajectories. The service is Flight-only, so outside flight kRPC does not
     # offer it at all and hasattr is False - that is normal, not a missing DLL.
     print("\nTrajectories")
     if not hasattr(conn, "trajectories"):

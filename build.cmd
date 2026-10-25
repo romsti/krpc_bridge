@@ -14,8 +14,9 @@ rem  last step writes dist\GameData\KRPC.Bridge\manifest.json and dist\GameData\
 rem  (tools\manifest.py): sha256 of every file, the commit, clean or dirty. "deploy" below is the
 rem  plain copy into one install.
 rem
-rem  Two mod folders come out: KRPC.Bridge (the DLLs) and TowerCatch (the catch tower's ModuleManager
-rem  patch and craft, from distribution\TowerCatch; no DLL - its services stay in KRPC.Bridge.Tower.dll).
+rem  Two mod folders come out: KRPC.Bridge (the bridge's DLLs) and TowerCatch (the whole catch tower: its
+rem  ModuleManager patch and craft, from distribution\TowerCatch, and its plugin
+rem  Plugins\KRPC.Bridge.Tower.dll, built here). KRPC.Bridge holds nothing of the tower.
 rem
 rem  YOU DO NOT NORMALLY NEED TO GIVE THE PATH. tools\find_ksp.py looks at the KSPROOT
 rem  variable, at ksp.path in this folder, at every Steam library declared in
@@ -147,6 +148,8 @@ rem  dist\ starts empty: a DLL that a refactor renamed or retired (R3: Actuators
 rem  would otherwise linger there, be scanned as a second commit and, worse, be deployed next to
 rem  its successor. dist\ holds nothing but build output.
 if exist "%DIST%" rmdir /s /q "%DIST%"
+rem  The same for the tower's folder: its plugin is built into it by the solution build just below.
+if exist "%DIST_TOWER%" rmdir /s /q "%DIST_TOWER%"
 dotnet build "%REPO%KRPC.Bridge.sln" -c Release -p:KSPRoot="%KSP%" -p:BridgeStampFile="%REPO%obj\BridgeStamp.g.cs" -v minimal --nologo
 if errorlevel 1 goto :failed
 
@@ -158,12 +161,12 @@ if errorlevel 1 goto :failed
 copy /Y "%REPO%distribution\KRPC.Bridge.version" "%DIST%\KRPC.Bridge.version" >nul
 if errorlevel 1 goto :failed
 
-rem  The catch tower is a package of its own, dist\GameData\TowerCatch: the ModuleManager patch that makes its
-rem  parts (TG.*), the craft those parts build (conn.tower_site spawns it when the game has no copy), its notice
-rem  and its KSP-AVC version file (all of distribution\TowerCatch), plus the licence. They used to be copied
-rem  into KRPC.Bridge; the bridge no longer ships them (two copies of the patch make every part twice).
-rem  dist\ starts empty here too, so a file the package dropped does not linger.
-if exist "%DIST_TOWER%" rmdir /s /q "%DIST_TOWER%"
+rem  The catch tower is a package of its own, dist\GameData\TowerCatch: its plugin (Plugins\KRPC.Bridge.Tower.dll
+rem  and .xml, built by the solution build above), the ModuleManager patch that makes its parts (TG.*), the craft
+rem  those parts build (conn.tower_site spawns it when the game has no copy), its notice and its KSP-AVC version
+rem  file (all of distribution\TowerCatch), plus the licence. The bridge ships none of it (two copies of the patch
+rem  make every part twice, two copies of the plugin declare the service twice). xcopy merges into the folder the
+rem  build made: the plugin stays.
 xcopy /E /I /Y /Q "%REPO%distribution\TowerCatch" "%DIST_TOWER%\" >nul
 if errorlevel 1 goto :failed
 copy /Y "%REPO%LICENSE" "%DIST_TOWER%\LICENSE" >nul
@@ -190,10 +193,8 @@ for %%N in (
   Plugins\KRPC.Bridge.Telemetry.dll
   Plugins\KRPC.Bridge.Fmrs.dll
   Plugins\KRPC.Bridge.Ident.dll
-  Plugins\KRPC.Bridge.MechJeb.dll
   Plugins\KRPC.Bridge.Ocisly.dll
   Plugins\KRPC.Bridge.Stock.dll
-  Plugins\KRPC.Bridge.Tower.dll
   Plugins\KRPC.Bridge.Trajectories.dll
 ) do (
   if not exist "%DIST%\%%N" (
@@ -201,9 +202,14 @@ for %%N in (
     set "MISSING=1"
   )
 )
+if not exist "%DIST_TOWER%\Plugins\KRPC.Bridge.Tower.dll" (
+  echo   MISSING FROM dist: TowerCatch\Plugins\KRPC.Bridge.Tower.dll
+  set "MISSING=1"
+)
 if defined MISSING goto :failed
+rem  The tower's plugin is scanned with the bridge's: kRPC scans every loaded assembly, whichever folder it is in.
 set "SCANARGS="
-for %%F in ("%DIST%\*.dll" "%DIST%\Plugins\*.dll") do set "SCANARGS=!SCANARGS! "%%~fF""
+for %%F in ("%DIST%\*.dll" "%DIST%\Plugins\*.dll" "%DIST_TOWER%\Plugins\*.dll") do set "SCANARGS=!SCANARGS! "%%~fF""
 dotnet run --project "%REPO%build\scan\Scan.csproj" -c Release -v quiet -- "!KSP!" !SCANARGS!
 if errorlevel 1 (
   echo.
@@ -223,15 +229,21 @@ if /I not "!DEPLOY!"=="deploy" goto :done
 
 echo.
 echo === deploying to GameData ===
-rem  The tower's patch moved out of KRPC.Bridge into the TowerCatch package. A plain copy never removes a file, so
-rem  copying both over an install that still has the old patch would leave TWO copies of it (every TG.* part made
-rem  twice). Refuse before writing anything.
-if exist "%KSP%\GameData\KRPC.Bridge\Patches\TowerCatch.cfg" (
-  echo   REFUSED: "%KSP%\GameData\KRPC.Bridge\Patches\TowerCatch.cfg" is the tower patch of the bridge before the
-  echo   TowerCatch package. Installing the package next to it makes two copies of the patch.
-  echo   Delete GameData\KRPC.Bridge\Patches and GameData\KRPC.Bridge\Crafts by hand, KSP closed, and run this again.
-  goto :failed
-)
+rem  The tower left KRPC.Bridge for the TowerCatch package (its patch, then its plugin). A plain copy never removes a
+rem  file, so copying both over an install that still has the old ones would leave TWO copies of the patch (every
+rem  TG.* part made twice) or of the plugin (the kRPC service Tower declared twice, which takes the server down).
+rem  Refuse before writing anything.
+if exist "%KSP%\GameData\KRPC.Bridge\Patches\TowerCatch.cfg" goto :oldtower
+if exist "%KSP%\GameData\KRPC.Bridge\Plugins\KRPC.Bridge.Tower.dll" goto :oldtower
+if exist "%KSP%\GameData\KRPC.Bridge\Plugins\KRPC.Bridge.MechJeb.dll" goto :oldtower
+goto :tower_ok
+:oldtower
+echo   REFUSED: "%KSP%\GameData\KRPC.Bridge" still holds the tower of the bridge before the TowerCatch package
+echo   (Patches\TowerCatch.cfg or Plugins\KRPC.Bridge.Tower.dll), or the retired MechJeb plugin. Installing the
+echo   package next to them makes the tower twice. Delete GameData\KRPC.Bridge by hand, KSP closed, and run this
+echo   again.
+goto :failed
+:tower_ok
 xcopy /E /I /Y /Q "%REPO%dist\GameData\KRPC.Bridge" "%KSP%\GameData\KRPC.Bridge\" >nul
 if errorlevel 1 goto :failed
 echo   copied to "%KSP%\GameData\KRPC.Bridge\"

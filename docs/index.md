@@ -1,6 +1,6 @@
 # KRPC.Bridge
 
-**kRPC services for FMRS, OCISLY, MechJeb 2 and Trajectories.** Four Kerbal Space Program
+**kRPC services for FMRS, OCISLY and Trajectories.** Three Kerbal Space Program
 mods that have no scriptable interface at all, made drivable from Python. Version 2 also adds
 services of its own (flight control and telemetry, stock utilities, booster catch towers) and
 **needs kRPC 0.7.0**.
@@ -49,7 +49,7 @@ objects, plus the `KSPField`, `KSPEvent` and `KSPAction` members of any `PartMod
 that is the whole of it. A mod whose functionality lives in a static class, a singleton or
 a `ScenarioModule` is simply invisible.
 
-All four mods here are exactly that shape.
+All three mods here are exactly that shape.
 
 **FMRS** exposes no `KSPEvent`, no action group and no key binding. Its jump API is a public
 method on a `MonoBehaviour` that stock kRPC has no way to reach. And the jump is not a
@@ -60,32 +60,29 @@ destroyed and rebuilt from a save file.
 reload silently drops every camera it was streaming, and nothing in the game brings them
 back.
 
-**MechJeb**'s ascent autopilot is reachable in principle, but the established bridge targets
-2.14.3 and no longer loads against 2.15.x, because it looks types and members up by exact
-name and 2.15 renamed most of them.
-
 **Trajectories** has a real public API — a static class, `Trajectories.API` — which is
 exactly the shape kRPC cannot see. It holds the only atmospheric impact prediction in the
 game that integrates the stock drag cubes at the vessel's actual attitude, and stock kRPC
 has no impact prediction of any kind.
 
-This mod reaches all four by reflection, resolved once at load, and reports member by
+This mod reaches all three by reflection, resolved once at load, and reports member by
 member when something has moved. Each integration is a separate assembly and degrades on
 its own: a mod you do not have reports `available = False` with a diagnostic naming exactly
 what was looked for, and nothing else is affected.
 
 ## Install
 
-Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY,
-MechJeb and Trajectories are each optional.
+Requires **KSP 1.12.x** and **[kRPC](https://github.com/krpc/krpc) 0.7.0**. FMRS, OCISLY
+and Trajectories are each optional.
 
 1. Download the [latest release](https://github.com/romsti/krpc_bridge/releases/latest) and
    unzip it so `GameData/KRPC.Bridge/` lands in your KSP `GameData/`. Keep each `.xml` next
    to its `.dll` — kRPC reads it to build the Python docstrings, so without it
    `help(conn.fmrs)` is empty. The booster catch tower's parts are a separate download,
-   `TowerCatch-x.y.z.zip` (`GameData/TowerCatch/`, optional; it needs ModuleManager, Modular Launch
-   Pads, HullCamera VDS and the Breaking Ground and Making History expansions). See the README: never
-   keep a second copy of its patch.
+   `TowerCatch-x.y.z.zip` (`GameData/TowerCatch/`, optional and complete: the tower's parts, its craft and
+   its plugin; the bridge holds nothing of it. It needs ModuleManager, Modular Launch Pads, HullCamera VDS
+   and the Breaking Ground and Making History expansions). See the README: never keep a second copy of
+   its patch or of its plugin.
 
 2. Install the kRPC Python client. There is nothing else to install; this mod ships no
    client library of its own.

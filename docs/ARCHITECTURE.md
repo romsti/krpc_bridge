@@ -3,8 +3,8 @@
 Read this before adding a plugin, before changing the project layout, or before putting a
 build into a game.
 
-It describes the mod as it is (October 2026): a Core, ten plugins built and scanned
-together, eleven DLLs that all say which commit they come from, and a manifest that gives the sha256 of
+It describes the mod as it is (October 2026): a Core, nine plugins built and scanned
+together, ten DLLs that all say which commit they come from, and a manifest that gives the sha256 of
 every file shipped. Since refactor R1 the Core also carries what every plugin
 needs (Core v2: a game clock, a vessel registry, one lease, one frame recorder, the bit and
 layout registries, frames and units, typed errors). Since refactor R3 what flies and what observes are separate DLLs: the old
@@ -81,9 +81,14 @@ builds a dependency graph, topologically sorts it, and loads in that order.
 **Consequence: graceful degradation is free.** A plugin declaring a dependency on
 `KRPC.Bridge.Core` is guaranteed Core's types are in the AppDomain before its own
 `KSPAddon` runs — and if Core is missing or too old, KSP *skips* the plugin and logs it,
-rather than loading it and throwing `TypeLoadException` on first use. Two plugins (Tower
-and Stock) declare **no** dependency on the Core on purpose: they must load next to
-any Core version, and they use nothing from it.
+rather than loading it and throwing `TypeLoadException` on first use. One plugin (Stock)
+declares **no** dependency on the Core on purpose: it must load next to any Core version, and
+it uses nothing from it. The Tower plugin uses nothing from the Core either, but it lives in
+another mod folder (`GameData/TowerCatch/Plugins`), and a folder says nothing about order: it
+declares `KSPAssemblyDependency("KRPC.Bridge.Core", 1, 3)` so that `AssemblyLoader` loads it
+after the Core, and skips it, with a line in `KSP.log`, when there is no Core. kRPC finds a
+service in the loaded assemblies, whatever folder its DLL came from, so `Tower` and `TowerSite`
+are registered exactly as if the DLL were in `KRPC.Bridge/Plugins`.
 
 ---
 
@@ -102,22 +107,23 @@ GameData/KRPC.Bridge/
     ├── KRPC.Bridge.Telemetry.dll    + .xml   service Telemetry   (what observes: V3, Ext, tracked, aero)
     ├── KRPC.Bridge.Fmrs.dll         + .xml   service FMRS        (FMRS Continued)
     ├── KRPC.Bridge.Ident.dll        + .xml   service Ident       (stock identifiers)
-    ├── KRPC.Bridge.MechJeb.dll      + .xml   service MechJeb     (MechJeb 2)
     ├── KRPC.Bridge.Ocisly.dll       + .xml   service OCISLY      (OfCourseIStillLoveYou)
     ├── KRPC.Bridge.Stock.dll        + .xml   service Stock       (stock utilities, no Core)
-    ├── KRPC.Bridge.Tower.dll        + .xml   services Tower, TowerSite (catch tower, no Core)
     └── KRPC.Bridge.Trajectories.dll + .xml   service Trajectories (Trajectories)
 ```
 
 The `.xml` must accompany **each** DLL in its own folder — kRPC looks for a file of the same
 name next to the assembly. A single `.xml` at the root would document the Core only.
 
-The release zip ships all of it; `Template` is never built.
+The release zip ships all of it; `Template` is never built. There is no MechJeb plugin any
+more (2.1.0).
 
-The booster catch tower's parts are a second package, with a zip of its own. They used to travel
-inside `GameData/KRPC.Bridge` (`Patches/`, `Crafts/`); installing the bridge then installed the
-patch, with no way to decline it. The services that place and read the tower (`conn.tower`,
-`conn.tower_site`) stay in `KRPC.Bridge.Tower.dll`; the package is only what the tower is made of:
+The booster catch tower is a second package, with a zip of its own, and the bridge holds nothing
+of it. Until 2.0.0 the tower's parts (`Patches/`, `Crafts/`) and its plugin travelled inside
+`GameData/KRPC.Bridge`; installing the bridge then installed the tower, with no way to decline it.
+Since 2.1.0 the package is the whole tower: what it is made of and the services that place and read
+it (`conn.tower`, `conn.tower_site`, in `KRPC.Bridge.Tower.dll`, built into the package's
+`Plugins/`):
 
 ```
 GameData/TowerCatch/
@@ -127,20 +133,26 @@ GameData/TowerCatch/
 │   └── TowerCatch.cfg                     <- ModuleManager patch: TG.* copies of parts of Modular Launch
 │                                             Pads, HullCamera VDS and the two DLC (Breaking Ground,
 │                                             Making History); text only, no model, no texture
-└── Crafts/
-    └── Tour Catch v5.craft                <- the tower tower_spawn_v1 puts on the ground
+├── Crafts/
+│   └── Tour Catch v5.craft                <- the tower tower_spawn_v1 puts on the ground
+└── Plugins/
+    └── KRPC.Bridge.Tower.dll + .xml       services Tower, TowerSite (no compile reference to the Core,
+                                              a KSPAssemblyDependency on it)
 ```
 
-It needs ModuleManager, Modular Launch Pads, HullCamera VDS Continued, KRPC.Bridge and the two paid
-DLC (which CKAN cannot install; `distribution/TowerCatch.netkan` says it in its description). The
-part names (`TG.*`) did not change: a tower already in a save loads as before. Its sources are
-`distribution/TowerCatch/`, which `build.cmd` copies to `dist/GameData/TowerCatch` as it is.
+It needs ModuleManager, Modular Launch Pads, HullCamera VDS Continued, kRPC, KRPC.Bridge 2.1.0 or later
+and the two paid DLC (which CKAN cannot install, only detect; `distribution/TowerCatch.netkan` declares
+them as `MakingHistory-DLC` and `BreakingGround-DLC`). The part names (`TG.*`) did not change: a tower
+already in a save loads as before. Its text files are `distribution/TowerCatch/`, which `build.cmd` copies
+to `dist/GameData/TowerCatch` as they are; the plugin is built into the same folder (`DistTowerRoot` in
+`Directory.Build.props`).
 
-**The patch is in exactly one mod folder, always.** Two copies make every `TG.*` part twice
-(ModuleManager's `+PART`); no copy makes KSP delete the towers of a save at load, for want of their
-parts. `conn.tower_site.tower_package_v1`
-tells a client which of `GameData/TowerCatch` and `GameData/KRPC.Bridge` holds the patch and the craft; and
-`build.cmd deploy` refuses to copy over an install that still has the bridge's old patch. A craft is
+**The tower's files are in exactly one mod folder, always.** Two copies of the patch make every `TG.*`
+part twice (ModuleManager's `+PART`); two copies of the plugin declare the service `Tower` twice, which
+kRPC refuses and the whole server goes down with it; no copy of the patch makes KSP delete the towers of
+a save at load, for want of their parts. `conn.tower_site.tower_package_v1` tells a client which of
+`GameData/TowerCatch` and `GameData/KRPC.Bridge` holds the patch and the craft; and `build.cmd deploy`
+refuses to copy over an install that still has the tower (or MechJeb) inside the bridge's folder. A craft is
 searched in the game's `Ships/VAB` and `Ships/SPH`, then `GameData/TowerCatch/Crafts`, then
 `GameData/KRPC.Bridge/Crafts` (the fallback of the transition, `TowerPackage.cs`).
 
@@ -149,12 +161,12 @@ searched in the game's `Ships/VAB` and `Ships/SPH`, then `GameData/TowerCatch/Cr
 ```
 Directory.Build.props        TFM, KSP paths, doc file, Deterministic.  Once, for every project.
 Directory.Build.targets      KSP references, the build stamp, deploy of one project.
-KRPC.Bridge.sln              Core + the ten plugins
+KRPC.Bridge.sln              Core + the nine plugins
 build.cmd                    tests, stamp, build, signature scan, manifests (Windows)
 src/
   Core/                      KRPC.Bridge.Core.dll
   Plugins/
-    Model/  Control/  Telemetry/  Fmrs/  Ident/  MechJeb/  Ocisly/  Stock/  Tower/  Trajectories/
+    Model/  Control/  Telemetry/  Fmrs/  Ident/  Ocisly/  Stock/  Tower/  Trajectories/
     Template/                copy this to start a plugin (never built)
 build/
   stubs/Stubs.cs             stand-ins so sources type-check with no KSP
@@ -336,11 +348,10 @@ the stock game for a flight-control client.
 | Telemetry | `Telemetry` (Flight) | 26 | yes (and Control) | `TelemetryAddon` (Instantly, registration and the pump's observer); no `FixedUpdate` of its own | what observes: V3, DynamicsExtV1, tracked vessels, AeroActuatorV1, aero wrench batch, samples, contact by leg (below) |
 | Fmrs | `FMRS` (All) | 36 | yes (ModRegistry, EventBus) | `FmrsWatcher` (every 5 ticks), `DroppedStagesWatch` (bounded watch after a separation) | FMRS Continued: dropped stages, jumps, recovery ledger, the dropped-stage table |
 | Ident | `Ident` (Flight) | 6 | yes | registration only | part `flightID`, vessel `persistentId` and `Guid` that kRPC holds but does not publish |
-| MechJeb | `MechJeb` (All) | 58 | yes | registration only | MechJeb 2: ascent, staging, any module by name, landing predictor, maneuver planner |
 | Ocisly | `OCISLY` (All) | 16 | yes (Hud, EventBus) | `AutoRestoreAddon` | camera streams across a scene reload |
 | Trajectories | `Trajectories` (Flight) | 28 | yes (MainThread) | `TrajectoriesHeadless` | impact prediction, target, descent profile |
 | Stock | `Stock` (Flight) | 15 | **no** | `FrameStaging` (Flight, `Update`) | stock utilities: delta-v simulation and stage table, staging from the frame loop, clamp-free aero force, landing-leg deployment; every procedure that takes a vessel also by persistentId (`_v2`) |
-| Tower | `Tower` (Flight), `TowerSite` (Space Center, Flight, Tracking Station) | 14 + 13 | **no** | `TowerLayouts` (Instantly, Awake only: its layouts into the Core's registry, by reflection), `TowerAddon` (`FixedUpdate`: hold of `place_v1`, hinge locks at rest, tower bubbles), `TowerAnchor` (`FixedUpdate` + floating-origin shift) | catch tower: ground anchor of every `TG.TowerBase` vessel (always on), exhaust damage switch, place/hold, hinge and joint probes, hinge lock at rest; the towers of a game from the Space Center: list, state, spawn from a craft, remove, fly to; in flight, a tower's bubble, loaded first and unpacked once loaded (`TowerSite`) |
+| Tower (ships in `GameData/TowerCatch`) | `Tower` (Flight), `TowerSite` (Space Center, Flight, Tracking Station) | 14 + 13 | **no** (loads after it) | `TowerLayouts` (Instantly, Awake only: its layouts into the Core's registry, by reflection), `TowerAddon` (`FixedUpdate`: hold of `place_v1`, hinge locks at rest, tower bubbles), `TowerAnchor` (`FixedUpdate` + floating-origin shift) | catch tower: ground anchor of every `TG.TowerBase` vessel (always on), exhaust damage switch, place/hold, hinge and joint probes, hinge lock at rest; the towers of a game from the Space Center: list, state, spawn from a craft, remove, fly to; in flight, a tower's bubble, loaded first and unpacked once loaded (`TowerSite`) |
 
 ### Model, Control, Telemetry (the old Actuators, refactor R3)
 
@@ -424,9 +435,12 @@ time after a separation and after a save write.
 
 ### Stock and Tower: no Core on purpose
 
-Both declare no `KSPAssemblyDependency` on the Core and use nothing from it, so a Core
-change never forces their redeployment and a broken Core never takes them down. Both are
-nevertheless in the solution, built, scanned and stamped by `build.cmd` like the others.
+Both use nothing from the Core and have no compile reference to it, so a Core change never
+forces their redeployment. Stock declares no `KSPAssemblyDependency` on the Core and loads
+next to any Core. Tower, which ships in the `TowerCatch` package, declares one (a name, not a
+reference), so that it is loaded after the Core wherever its folder is: its layouts are declared
+into the Core's registry at load. Both are in the solution, built, scanned and stamped by
+`build.cmd` like the others.
 
 `TowerAnchor` is **always on, without a flag**: every loaded, unpacked, landed vessel whose
 root part is `TG.TowerBase` gets a `FixedJoint` to the world on its first unpacked tick
@@ -492,15 +506,17 @@ fails the build if a row names a constant that does not exist.
 4. the solution, every project compiling the same stamp file (`-p:BridgeStampFile=...`):
    `AssemblyInformationalVersion "<mod version>+<sha>[.dirty]"`, `AssemblyMetadata`
    `KRPC.Bridge.GitSha`, `GitDirty`, `SourceDate`. LICENSE, NOTICE and the `.version` file are
-   copied next to the DLLs, and `distribution/TowerCatch` (with LICENSE) into `dist/GameData/TowerCatch`;
-5. kRPC's own signature scanner on every DLL of `dist/` (the nine must be there), then the
+   copied next to the DLLs, and `distribution/TowerCatch` (with LICENSE) into `dist/GameData/TowerCatch`,
+   where the solution has already built the tower's plugin (`Plugins/KRPC.Bridge.Tower.dll`);
+5. kRPC's own signature scanner on every DLL of `dist/` (the nine of the bridge and the tower's must be
+   there), then the
    Core's manifest code run on the same DLLs: every DLL stamped with one commit, every known
    layout resolved;
 6. `tools/manifest.py` writes `dist/GameData/KRPC.Bridge/manifest.json` and
    `dist/GameData/TowerCatch/manifest.json`: the sha256 and size of every file, the commit,
    `git_dirty`, and `deliverable` (clean tree). It refuses a DLL that does not carry this
-   build's commit, a file the build does not produce (a patch or a craft in the bridge's folder
-   included), a shipped extra whose bytes differ from the repo's, and a tree that moved during the
+   build's commit, a file the build does not produce (the tower's patch, craft or plugin in the
+   bridge's folder included), a shipped extra whose bytes differ from the repo's, and a tree that moved during the
    build.
 
 **Builds are deterministic** (`<Deterministic>true</Deterministic>`, no PDB, no time in the
@@ -533,12 +549,12 @@ Given fact 3, all robustness has to happen before deployment.
 **1. Run kRPC's own scanner at build time.** `build/scan` loads the built DLLs and calls
 `KRPC.Service.Scanner.Scanner.GetServices(errors)` — the same validation the server
 performs, in about a second. Passing the error list makes it collect every bad signature
-instead of throwing on the first. `build.cmd` runs it on all eleven DLLs and refuses to go on
+instead of throwing on the first. `build.cmd` runs it on all ten DLLs and refuses to go on
 if one is missing from `dist/` (which it empties first: a DLL renamed away must not linger).
 
 **2. Type-check every source file against the stubs.** `build/verify` uses a glob, not a
 list of files: forgetting to add a new plugin to a list is precisely the path by which an
-unchecked source reaches `GameData`. Tower and Stock, which have no Core dependency,
+unchecked source reaches `GameData`. Tower and Stock, which have no Core reference,
 are excluded from it and checked by the real build and the scan only.
 
 **3. Know the signature rules.** Legal parameter and return types are: `bool`, `int`,
@@ -582,7 +598,7 @@ as handles and 1 as packed rows. Nothing in the Core returns a `KRPCClass`.
 (`ModRegistry.StaticGetter<T>`, `InstanceGetter<T>`, Telemetry's `ReflectionCache`).
 
 **Any property can be streamed, so keep every getter cheap**, and cache what cannot change
-during a session (`plugins`, `manifest_v1`, MechJeb's name lists).
+during a session (`plugins`, `manifest_v1`).
 
 **What runs every tick.** Core: the game clock (one `ObscenelyEarly` callback, one check in
 `FixedUpdate`), `Ticks++` and the queue pump. Control: lease upkeep and the pump, which calls

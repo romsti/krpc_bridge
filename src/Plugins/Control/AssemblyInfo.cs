@@ -7,5 +7,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Control")]
 [assembly: AssemblyDescription ("What flies: actuator leases, the atomic protocol v2, AttitudeV1 and its lateral force, the physics-step pump.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]

@@ -7,5 +7,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Model")]
 [assembly: AssemblyDescription ("The pure model of the bridge's flight loop: AttitudeV1 law and allocation, write rules, lateral force, gimbal pivots, effector registry. System only.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]

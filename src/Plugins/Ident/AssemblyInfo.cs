@@ -17,5 +17,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Ident")]
 [assembly: AssemblyDescription ("KSP identifiers that kRPC holds internally but does not publish: part flightID, vessel persistentId and Guid.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]

@@ -253,10 +253,7 @@ public class Vessel : UnityEngine.MonoBehaviour
     public double altitude;
 }
 
-// The maneuver-node side of the stock API, used by the MechJeb plugin's maneuver planner.
-// MechJeb computes the burn and places the node; we only need to find where the last one
-// ends so a second operation can be planned from there, exactly as MechJeb's own window
-// does. The node itself is then read by stock kRPC, not by us.
+// The maneuver-node side of the stock API (Vessel.patchedConicSolver), kept for the type-check.
 public class Orbit
 {
 }

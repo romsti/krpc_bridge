@@ -6,8 +6,8 @@ namespace KRPC.Bridge.Core
     /// The distinction that matters: calling UIMasterController.HideUI() directly blanks
     /// the stock canvases without telling anyone, so every mod window stays on screen.
     /// Firing GameEvents.onHideUI is what F2 actually does, and it is what mods listen
-    /// for - so their windows go away too. For a recorded flight with FMRS, OCISLY,
-    /// MechJeb and a toolbar all drawing, that is the whole difference between a clean
+    /// for - so their windows go away too. For a recorded flight with FMRS, OCISLY
+    /// and a toolbar all drawing, that is the whole difference between a clean
     /// frame and a cluttered one.
     /// </summary>
     public static class Hud

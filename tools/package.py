@@ -6,9 +6,10 @@
 Produces two zips, each holding a GameData/ folder the user unzips straight into their KSP install:
 
   * dist/KRPC.Bridge-<version>.zip   GameData/KRPC.Bridge: the assemblies, their .xml, LICENSE, NOTICE;
-  * dist/TowerCatch-<version>.zip    GameData/TowerCatch: the booster catch tower's ModuleManager patch and
-    craft (distribution/TowerCatch), which used to travel inside the bridge's folder. The tower's version is
-    its own (distribution/TowerCatch/TowerCatch.version); `version` is the bridge's.
+  * dist/TowerCatch-<version>.zip    GameData/TowerCatch: the whole booster catch tower, as a package of its own:
+    its ModuleManager patch and craft (distribution/TowerCatch) and its plugin, Plugins/KRPC.Bridge.Tower.dll
+    (the services that place and read the tower, and its .xml). It depends on the bridge. The tower's version
+    is its own (distribution/TowerCatch/TowerCatch.version); `version` is the bridge's.
 
 Run build.cmd first - this packages, it does not compile.
 
@@ -22,8 +23,9 @@ Rules it enforces, because they are easy to get wrong by hand and expensive to g
     full licence text in the download itself, not merely a licence name on the download
     page.
 
-  * The bridge zip carries no patch and no craft, and the tower zip carries no assembly: the tower's
-    patch in two places makes every one of its parts twice in the game.
+  * The bridge zip carries nothing of the tower (no patch, no craft, no assembly), and the tower zip carries
+    nothing but the tower: the patch in two places makes every one of its parts twice in the game, and the
+    tower assembly in two places declares the kRPC service Tower twice, which takes the whole server down.
 """
 
 import io
@@ -55,11 +57,14 @@ EXPECTED = [
     "Plugins/KRPC.Bridge.Telemetry.dll",
     "Plugins/KRPC.Bridge.Fmrs.dll",
     "Plugins/KRPC.Bridge.Ocisly.dll",
-    "Plugins/KRPC.Bridge.MechJeb.dll",
     "Plugins/KRPC.Bridge.Trajectories.dll",
     "Plugins/KRPC.Bridge.Ident.dll",
-    "Plugins/KRPC.Bridge.Tower.dll",
     "Plugins/KRPC.Bridge.Stock.dll",
+]
+
+# The assemblies of the tower package (built, not in distribution/TowerCatch), as the bridge's EXPECTED.
+TOWER_EXPECTED = [
+    "Plugins/KRPC.Bridge.Tower.dll",
 ]
 
 EXTRAS = [
@@ -68,7 +73,7 @@ EXTRAS = [
     ("distribution/KRPC.Bridge.version", "KRPC.Bridge.version"),
 ]
 
-# What the tower package must hold at least (the rest of distribution/TowerCatch goes in too).
+# What the tower package must hold at least besides its assembly (the rest of distribution/TowerCatch goes in too).
 TOWER_REQUIRED = [
     "Patches/TowerCatch.cfg",
     "Crafts/Tour Catch v5.craft",
@@ -157,7 +162,12 @@ def package_bridge(version):
     # A DLL nobody meant to ship is a real hazard here: an extra assembly can declare a
     # kRPC service of its own, and the template does exactly that.
     for relative in shipped:
-        if relative not in EXPECTED:
+        if relative in TOWER_EXPECTED:
+            problems.append(
+                "%s in the bridge's folder: the tower's plugin belongs to the %s package "
+                "(GameData/%s/Plugins); a build older than the move left it in dist/"
+                % (relative, TOWER, TOWER))
+        elif relative not in EXPECTED:
             problems.append(
                 "unexpected assembly: %s - if this is intentional add it to EXPECTED, "
                 "otherwise something is being shipped by accident" % relative)
@@ -209,6 +219,23 @@ def package_tower():
         return 2
 
     problems = []
+    shipped = []
+    for folder, _, names in os.walk(TOWER_MODDIR):
+        for name in sorted(names):
+            if not name.endswith(".dll"):
+                continue
+            full = os.path.join(folder, name)
+            shipped.append(os.path.relpath(full, TOWER_MODDIR).replace(os.sep, "/"))
+            if not os.path.exists(full[:-4] + ".xml"):
+                problems.append("missing %s - without it help(conn.tower) is empty for every user"
+                                % (os.path.relpath(full, TOWER_MODDIR)[:-4] + ".xml"))
+    for relative in TOWER_EXPECTED:
+        if relative not in shipped:
+            problems.append("missing assembly: " + relative)
+    for relative in shipped:
+        if relative not in TOWER_EXPECTED:
+            problems.append("unexpected assembly in the tower package: %s - if this is intentional add it to "
+                            "TOWER_EXPECTED" % relative)
     extras = tower_extras()
     targets = [target for _, target in extras]
     for source, _ in extras:
@@ -219,17 +246,18 @@ def package_tower():
             problems.append("missing %s in %s (the package would ship without it)" % (required, TOWER_SOURCE))
     if version == "0.0.0":
         problems.append("%s/TowerCatch.version has no readable version" % TOWER_SOURCE)
-    for folder, _, names in os.walk(TOWER_MODDIR):
-        for name in names:
-            if name.endswith((".dll", ".xml")):
-                problems.append("unexpected assembly or documentation in the tower package: %s - the services "
-                                "stay in KRPC.Bridge.Tower.dll"
-                                % os.path.relpath(os.path.join(folder, name), TOWER_MODDIR))
     if problems:
         print("%d problem(s):" % len(problems))
         for problem in problems:
             print("  " + problem)
         return 1
+
+    # Anything the build leaves behind that must not ship.
+    for folder, _, names in os.walk(TOWER_MODDIR):
+        for name in names:
+            if name.endswith((".pdb", ".deps.json", ".dev.json")):
+                os.remove(os.path.join(folder, name))
+                print("removed " + os.path.relpath(os.path.join(folder, name), TOWER_MODDIR))
 
     for source, target in extras:
         destination = os.path.join(TOWER_MODDIR, target.replace("/", os.sep))

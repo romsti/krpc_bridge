@@ -1,6 +1,6 @@
 site_name: KRPC.Bridge
 site_description: >-
-  kRPC services for FMRS, OCISLY and MechJeb 2 - three Kerbal Space Program mods
+  kRPC services for FMRS, OCISLY and Trajectories - three Kerbal Space Program mods
   with no scriptable interface, made drivable from Python.
 site_url: https://romsti.github.io/krpc_bridge/
 site_author: romsti

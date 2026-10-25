@@ -17,5 +17,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Fmrs")]
 [assembly: AssemblyDescription ("kRPC service for FMRS Continued: fly dropped stages, replay landings, read the recovery ledger.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]

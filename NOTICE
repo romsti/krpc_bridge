@@ -8,11 +8,19 @@ WHAT THIS MOD SHIPS
 
 Only its own assemblies:
 
-    KRPC.Bridge.Core.dll        + .xml
-    KRPC.Bridge.Fmrs.dll        + .xml
-    KRPC.Bridge.Ocisly.dll      + .xml
-    KRPC.Bridge.MechJeb.dll     + .xml
-    LICENSE, NOTICE, KRPC.Bridge.version
+    KRPC.Bridge.Core.dll            + .xml
+    Plugins/KRPC.Bridge.Model.dll   + .xml
+    Plugins/KRPC.Bridge.Control.dll + .xml
+    Plugins/KRPC.Bridge.Telemetry.dll + .xml
+    Plugins/KRPC.Bridge.Fmrs.dll    + .xml
+    Plugins/KRPC.Bridge.Ident.dll   + .xml
+    Plugins/KRPC.Bridge.Ocisly.dll  + .xml
+    Plugins/KRPC.Bridge.Stock.dll   + .xml
+    Plugins/KRPC.Bridge.Trajectories.dll + .xml
+    manifest.json, LICENSE, NOTICE, KRPC.Bridge.version
+
+The booster catch tower (its parts, its craft and its plugin KRPC.Bridge.Tower.dll)
+is a separate package, TowerCatch, with a notice of its own.
 
 Nothing else. No kRPC assemblies, no KSP or Unity assemblies, and no files
 belonging to any of the mods listed below. Everything is a dependency to be
@@ -52,10 +60,6 @@ absent, its plugin reports available = false and everything else keeps working.
     Copyright (c) 2015 SIT89, maintained by linuxgurugamer
     MIT License
     https://github.com/linuxgurugamer/FMRS
-
-    MechJeb 2
-    GNU General Public License v3.0
-    https://github.com/MuMech/MechJeb2
 
     OfCourseIStillLoveYou (OCISLY)
     Copyright (c) Jesus Rodriguez Valencia

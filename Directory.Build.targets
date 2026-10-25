@@ -131,8 +131,9 @@
 
     The destination is derived from OutputPath rather than named, so it cannot drift out
     of step with where the build actually wrote. dist/ already mirrors GameData exactly,
-    so "the part of OutputPath below DistRoot" IS the part of GameData to append - which
-    is empty for the Core and "Plugins\" for a plugin, with no per-project knowledge here.
+    so "the part of OutputPath below the mod's root in dist" IS the part of GameData to append -
+    which is empty for the Core and "Plugins\" for a plugin, with no per-project knowledge here
+    beyond the mod folder (KRPC.Bridge, or TowerCatch for the tower's plugin).
 
     build.cmd does not use this; it xcopies the whole dist tree, which also picks up
     LICENSE, NOTICE and the .version file. This target is for deploying one project on
@@ -141,8 +142,14 @@
   <Target Name="DeployToKSP" AfterTargets="Build"
           Condition="'$(Deploy)'=='true' and '$(BridgeUseStubs)'!='true'">
     <PropertyGroup>
-      <BridgeDeploySubdir>$(OutputPath.Replace('$(DistRoot)', ''))</BridgeDeploySubdir>
-      <BridgeDeployDir>$(KSPRoot)\GameData\KRPC.Bridge\$(BridgeDeploySubdir)</BridgeDeployDir>
+      <!-- The mod folder a project belongs to: KRPC.Bridge unless the project says otherwise (the tower's
+           plugin sets both to TowerCatch). -->
+      <_BridgeModRoot>$(BridgeModRoot)</_BridgeModRoot>
+      <_BridgeModRoot Condition="'$(_BridgeModRoot)'==''">$(DistRoot)</_BridgeModRoot>
+      <_BridgeModName>$(BridgeModName)</_BridgeModName>
+      <_BridgeModName Condition="'$(_BridgeModName)'==''">KRPC.Bridge</_BridgeModName>
+      <BridgeDeploySubdir>$(OutputPath.Replace('$(_BridgeModRoot)', ''))</BridgeDeploySubdir>
+      <BridgeDeployDir>$(KSPRoot)\GameData\$(_BridgeModName)\$(BridgeDeploySubdir)</BridgeDeployDir>
     </PropertyGroup>
     <MakeDir Directories="$(BridgeDeployDir)" />
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll;$(OutputPath)$(AssemblyName).xml"

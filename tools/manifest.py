@@ -4,8 +4,8 @@
     python tools/manifest.py [--package KRPC.Bridge|TowerCatch] [--stamp obj/BridgeStamp.json] [--dist DIR]
 
 build.cmd runs it last, once per package, after the signature scan. A package is a mod folder of
-GameData: KRPC.Bridge (the DLLs) and TowerCatch (the booster catch tower's ModuleManager patch and
-craft, which used to travel inside KRPC.Bridge; no DLL, its sources are distribution/TowerCatch).
+GameData: KRPC.Bridge (the DLLs) and TowerCatch (the whole booster catch tower: its ModuleManager patch
+and craft, from distribution/TowerCatch, and its plugin KRPC.Bridge.Tower.dll).
 Each manifest gives the sha256 and size of every file in the package's folder, the commit the build
 was made from and whether the tree was clean. A manifest whose tree was not clean says
 "deliverable": false: it is a build to test, not one to publish.
@@ -15,7 +15,8 @@ It also refuses to write a manifest that would lie:
     build, or one built outside build.cmd);
   * a file that the build does not produce (for KRPC.Bridge: anything besides the assemblies of
     tools/package.py EXPECTED and their .xml, LICENSE, NOTICE and the .version file; for TowerCatch:
-    anything besides the files of distribution/TowerCatch and LICENSE), or one of the copied files
+    anything besides the files of distribution/TowerCatch, LICENSE and the assemblies of TOWER_EXPECTED
+    and their .xml), or one of the copied files
     whose bytes differ from the repo's;
   * a commit or a dirty state that changed between the stamp and now (the tree moved during the
     build).
@@ -36,7 +37,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import build_stamp  # noqa: E402
-from package import BRIDGE, EXPECTED, PACKAGES, TOWER, TOWER_SOURCE, tower_version  # noqa: E402
+from package import BRIDGE, EXPECTED, PACKAGES, TOWER, TOWER_EXPECTED, TOWER_SOURCE, tower_version  # noqa: E402
 
 MANIFEST_NAME = "manifest.json"
 FORMAT = 1
@@ -78,7 +79,7 @@ def expected_sources(root=ROOT, package=BRIDGE):
 
     KRPC.Bridge: the assemblies and their .xml (built), LICENSE, NOTICE and the .version file.
     TowerCatch: everything under distribution/TowerCatch (the patch, the craft, NOTICE, the .version file),
-    and the repo's LICENSE; it holds no built file at all.
+    the repo's LICENSE, and the tower's assembly and its .xml (built).
     """
     if package not in PACKAGES:
         raise ValueError("unknown package %r (known: %s)" % (package, ", ".join(PACKAGES)))
@@ -87,6 +88,9 @@ def expected_sources(root=ROOT, package=BRIDGE):
         for rel in tower_files(root):
             expected[rel] = TOWER_SOURCE + "/" + rel
         expected["LICENSE"] = "LICENSE"
+        for dll in TOWER_EXPECTED:
+            expected[dll] = None
+            expected[dll[:-4] + ".xml"] = None
         return expected
     for dll in EXPECTED:
         expected[dll] = None

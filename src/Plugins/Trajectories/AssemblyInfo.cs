@@ -21,5 +21,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle ("KRPC.Bridge.Trajectories")]
 [assembly: AssemblyDescription ("kRPC service for the Trajectories mod: atmospheric impact prediction, target and descent profile.")]
-[assembly: AssemblyVersion ("2.0.0.0")]
-[assembly: AssemblyFileVersion ("2.0.0.0")]
+[assembly: AssemblyVersion ("2.1.0.0")]
+[assembly: AssemblyFileVersion ("2.1.0.0")]
